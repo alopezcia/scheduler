@@ -9,6 +9,10 @@ use std::str::FromStr;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
+// Importamos las herramientas de CORS
+use tower_http::cors::{Any, CorsLayer}; 
+use axum::http::HeaderValue;
+
 use config::AppConfig;
 use state::AppState;
 
@@ -42,6 +46,9 @@ async fn main() {
 
     let port = config.port;
 
+    // Guardamos una copia del allowed_origin antes de mover config a state
+    let origin_str = config.allowed_origin.clone();
+
     let state = AppState {
         pool,
         jwt_secret: config.jwt_secret,
@@ -49,7 +56,18 @@ async fn main() {
         allowed_origin: config.allowed_origin,
     };
 
-    let app = routes::build_router(state);
+    // 2. Configuramos la capa (Layer) de CORS usando tu variable de entorno
+    let cors = CorsLayer::new()
+        .allow_origin(
+            origin_str
+                .parse::<HeaderValue>()
+                .expect("El origen configurado en allowed_origin no es válido")
+        )
+        .allow_methods(Any) // Permite GET, POST, PUT, DELETE, etc.
+        .allow_headers(Any); // Permite cualquier cabecera (Content-Type, Authorization, etc.)
+
+
+    let app = routes::build_router(state).layer(cors);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
         .await
