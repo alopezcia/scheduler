@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod events;
 mod routes;
+mod scada;
 mod state;
 
 use std::str::FromStr;

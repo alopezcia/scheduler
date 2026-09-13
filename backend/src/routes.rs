@@ -5,6 +5,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::auth;
 use crate::events;
+use crate::scada;
 use crate::state::AppState;
 
 fn cors_layer(allowed_origin: &str) -> CorsLayer {
@@ -36,6 +37,46 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/events/{id}",
             put(events::handlers::update_event).delete(events::handlers::delete_event),
+        )
+        .route(
+            "/sites",
+            get(scada::handlers::list_sites).post(scada::handlers::create_site),
+        )
+        .route(
+            "/sites/{id}",
+            put(scada::handlers::update_site).delete(scada::handlers::delete_site),
+        )
+        .route(
+            "/assets",
+            get(scada::handlers::list_assets).post(scada::handlers::create_asset),
+        )
+        .route(
+            "/assets/{id}",
+            put(scada::handlers::update_asset).delete(scada::handlers::delete_asset),
+        )
+        .route(
+            "/connections",
+            get(scada::handlers::list_connections).post(scada::handlers::create_connection),
+        )
+        .route(
+            "/connections/{id}",
+            put(scada::handlers::update_connection).delete(scada::handlers::delete_connection),
+        )
+        .route(
+            "/tags",
+            get(scada::handlers::list_tags).post(scada::handlers::create_tag),
+        )
+        .route(
+            "/tags/{id}",
+            put(scada::handlers::update_tag).delete(scada::handlers::delete_tag),
+        )
+        .route(
+            "/schedules",
+            get(scada::handlers::list_schedules).post(scada::handlers::create_schedule),
+        )
+        .route(
+            "/schedules/{id}",
+            put(scada::handlers::update_schedule).delete(scada::handlers::delete_schedule),
         );
 
     let cors = cors_layer(&state.allowed_origin);
