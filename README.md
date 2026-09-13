@@ -2,7 +2,8 @@
 
 Aplicación de calendario colaborativo hecha con **React + Redux Toolkit**. Permite registrarse/iniciar
 sesión, crear, editar y eliminar eventos en un calendario compartido (`react-big-calendar`), y generar
-varios eventos de una sola vez a partir de una expresión **crontab**.
+varios eventos de una sola vez a partir de una expresión **crontab**. También incluye una sección de
+**Mantenimiento SCADA** para administrar sites, assets, connections, tags y schedules.
 
 El backend que consume este frontend vive en [`backend/`](./backend) — una API REST en **Rust**
 (axum + SQLite). Ver [`backend/README.md`](./backend/README.md) para su documentación completa.
@@ -45,6 +46,17 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
 │   │   │   └── Navbar.jsx
 │   │   └── pages/CalendarPage.jsx  # Página principal, arma el <Calendar /> y los modales/FABs
 │   │
+│   ├── scada/                    # Módulo de mantenimiento SCADA (UI)
+│   │   ├── components/
+│   │   │   └── EntityMaintenance.jsx # Tabla + modal de alta/edición genéricos, reusados por las 5 páginas
+│   │   └── pages/
+│   │       ├── ScadaPage.jsx          # Navbar + tabs para elegir la entidad a mantener
+│   │       ├── SitesMaintenancePage.jsx
+│   │       ├── AssetsMaintenancePage.jsx
+│   │       ├── ConnectionsMaintenancePage.jsx
+│   │       ├── TagsMaintenancePage.jsx
+│   │       └── SchedulesMaintenancePage.jsx
+│   │
 │   ├── router/                   # React Router (rutas públicas/privadas según auth)
 │   │
 │   ├── store/                    # Redux Toolkit
@@ -82,6 +94,17 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
   (con `cron-parser`) y crea un evento por cada una, reutilizando `startSavingManyEvents`.
 - **`store/ui` + `hooks/useUiStore`**: controla la visibilidad de los dos modales de alta de eventos
   (individual y por crontab).
+- **`scada/`**: sección de mantenimiento (listar/crear/editar/borrar) para las entidades SCADA del
+  backend — `sites`, `assets`, `connections`, `tags` y `schedules`. Se accede con el botón
+  **Mantenimiento** del `Navbar` (ruta `/scada`), que alterna a **Calendario** para volver. `ScadaPage`
+  muestra una barra de tabs y renderiza la página de la entidad activa; cada página sólo define sus
+  columnas de tabla y campos de formulario (incluyendo los `select` de claves foráneas, p. ej. el
+  `site_id` de un asset o el `connection_id` de un tag) y delega el listado, el modal y las llamadas
+  `GET`/`POST`/`PUT`/`DELETE` a `components/EntityMaintenance.jsx`. Los campos `config`/`address`/
+  `target_value`/`allowed_values` se editan como JSON en un textarea y se valida su sintaxis antes de
+  enviarlos; el `asset_id` de un tag se toma automáticamente del `connection_id` elegido, igual que
+  exige el backend. Ver [`backend/README.md`](./backend/README.md#modelo-scada) para el contrato de
+  cada endpoint.
 
 ## Desarrollo
 
