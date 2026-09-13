@@ -39,6 +39,12 @@
   padding: 10px;
 }
 
+.modal-scada {
+  max-height: 80vh;
+  max-width: 640px;
+  overflow-y: auto;
+}
+
 /* FABS */
 .fab {
   border-radius: 100%;

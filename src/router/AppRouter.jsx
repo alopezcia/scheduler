@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { LoginPage } from '../auth';
 import { CalendarPage } from '../calendar';
+import { ScadaPage } from '../scada';
 import { useAuthStore } from '../hooks';
 
 
@@ -37,6 +38,7 @@ export const AppRouter = () => {
                     : (
                         <>
                             <Route path="/" element={ <CalendarPage /> } />
+                            <Route path="/scada" element={ <ScadaPage /> } />
                             <Route path="/*" element={ <Navigate to="/" /> } />
                         </>
                     )
