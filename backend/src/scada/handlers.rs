@@ -765,13 +765,6 @@ fn validate_schedule_payload(payload: &SchedulePayload) -> Result<(), AppError> 
                 ));
             }
         }
-        TriggerType::CalendarEvent => {
-            if payload.event_id.is_none() {
-                return Err(AppError::BadRequest(
-                    "Una programación 'calendar_event' requiere event_id".to_string(),
-                ));
-            }
-        }
     }
 
     Ok(())
@@ -817,22 +810,9 @@ async fn fetch_tag_constraints(
     Ok((data_type, allowed_values.map(|v| v.0)))
 }
 
-async fn ensure_event_exists(state: &AppState, event_id: &str) -> Result<(), AppError> {
-    let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE id = ?")
-        .bind(event_id)
-        .fetch_one(&state.pool)
-        .await?;
-    if exists == 0 {
-        return Err(AppError::BadRequest(
-            "El evento de calendario referenciado no existe".to_string(),
-        ));
-    }
-    Ok(())
-}
-
 async fn fetch_schedule(state: &AppState, id: &str) -> Result<ScheduleResponse, AppError> {
     sqlx::query_as::<_, ScheduleRow>(
-        "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, event_id, start_date, \
+        "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, start_date, \
          end_date, enabled, requires_confirmation, created_by, created_at \
          FROM schedules WHERE id = ?",
     )
@@ -850,7 +830,7 @@ pub async fn list_schedules(
 ) -> Result<Json<Value>, AppError> {
     let rows = match (&filter.tag_id, filter.enabled) {
         (Some(tag_id), Some(enabled)) => sqlx::query_as::<_, ScheduleRow>(
-            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, event_id, start_date, \
+            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, start_date, \
              end_date, enabled, requires_confirmation, created_by, created_at \
              FROM schedules WHERE tag_id = ? AND enabled = ? ORDER BY created_at ASC",
         )
@@ -859,7 +839,7 @@ pub async fn list_schedules(
         .fetch_all(&state.pool)
         .await?,
         (Some(tag_id), None) => sqlx::query_as::<_, ScheduleRow>(
-            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, event_id, start_date, \
+            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, start_date, \
              end_date, enabled, requires_confirmation, created_by, created_at \
              FROM schedules WHERE tag_id = ? ORDER BY created_at ASC",
         )
@@ -867,7 +847,7 @@ pub async fn list_schedules(
         .fetch_all(&state.pool)
         .await?,
         (None, Some(enabled)) => sqlx::query_as::<_, ScheduleRow>(
-            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, event_id, start_date, \
+            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, start_date, \
              end_date, enabled, requires_confirmation, created_by, created_at \
              FROM schedules WHERE enabled = ? ORDER BY created_at ASC",
         )
@@ -875,7 +855,7 @@ pub async fn list_schedules(
         .fetch_all(&state.pool)
         .await?,
         (None, None) => sqlx::query_as::<_, ScheduleRow>(
-            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, event_id, start_date, \
+            "SELECT id, name, tag_id, target_value, trigger_type, cron_expr, start_date, \
              end_date, enabled, requires_confirmation, created_by, created_at \
              FROM schedules ORDER BY created_at ASC",
         )
@@ -899,16 +879,12 @@ pub async fn create_schedule(
     let (data_type, allowed_values) = fetch_tag_constraints(&state, &payload.tag_id).await?;
     validate_target_value(data_type, allowed_values.as_ref(), &payload.target_value)?;
 
-    if let Some(event_id) = &payload.event_id {
-        ensure_event_exists(&state, event_id).await?;
-    }
-
     let id = Uuid::new_v4().to_string();
     sqlx::query(
         r#"INSERT INTO schedules (
-            id, name, tag_id, target_value, trigger_type, cron_expr, event_id,
+            id, name, tag_id, target_value, trigger_type, cron_expr,
             start_date, end_date, enabled, requires_confirmation, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&id)
     .bind(payload.name.trim())
@@ -916,7 +892,6 @@ pub async fn create_schedule(
     .bind(SqlxJson(&payload.target_value))
     .bind(payload.trigger_type)
     .bind(&payload.cron_expr)
-    .bind(&payload.event_id)
     .bind(&payload.start_date)
     .bind(&payload.end_date)
     .bind(payload.enabled)
@@ -943,13 +918,9 @@ pub async fn update_schedule(
     let (data_type, allowed_values) = fetch_tag_constraints(&state, &payload.tag_id).await?;
     validate_target_value(data_type, allowed_values.as_ref(), &payload.target_value)?;
 
-    if let Some(event_id) = &payload.event_id {
-        ensure_event_exists(&state, event_id).await?;
-    }
-
     let result = sqlx::query(
         r#"UPDATE schedules SET
-            name = ?, tag_id = ?, target_value = ?, trigger_type = ?, cron_expr = ?, event_id = ?,
+            name = ?, tag_id = ?, target_value = ?, trigger_type = ?, cron_expr = ?,
             start_date = ?, end_date = ?, enabled = ?, requires_confirmation = ?
         WHERE id = ?"#,
     )
@@ -958,7 +929,6 @@ pub async fn update_schedule(
     .bind(SqlxJson(&payload.target_value))
     .bind(payload.trigger_type)
     .bind(&payload.cron_expr)
-    .bind(&payload.event_id)
     .bind(&payload.start_date)
     .bind(&payload.end_date)
     .bind(payload.enabled)
@@ -1085,7 +1055,6 @@ mod tests {
             target_value: json!(true),
             trigger_type,
             cron_expr: None,
-            event_id: None,
             start_date: None,
             end_date: None,
             enabled: true,
@@ -1101,13 +1070,6 @@ mod tests {
     #[test]
     fn requires_cron_expr_for_cron_schedules() {
         assert!(validate_schedule_payload(&schedule_payload(TriggerType::Cron)).is_err());
-    }
-
-    #[test]
-    fn requires_event_id_for_calendar_event_schedules() {
-        assert!(
-            validate_schedule_payload(&schedule_payload(TriggerType::CalendarEvent)).is_err()
-        );
     }
 
     #[test]

@@ -7,26 +7,55 @@ use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use crate::events::models::{EventPayload, EventResponse, EventRow, EventUser};
+use crate::events::models::{EventPayload, EventResponse, EventRow};
 use crate::state::AppState;
 
-fn validate_payload(payload: &EventPayload) -> Result<(), AppError> {
-    if payload.title.trim().is_empty() {
-        return Err(AppError::BadRequest("El título es obligatorio".to_string()));
+const SELECT_EVENT_BY_ID: &str = r#"
+    SELECT e.id, e.schedule_id, s.name AS title, e.start_date, e.user_id, u.name AS user_name
+    FROM events e
+    JOIN schedules s ON s.id = e.schedule_id
+    JOIN users u ON u.id = e.user_id
+    WHERE e.id = ?
+"#;
+
+const SELECT_ALL_EVENTS: &str = r#"
+    SELECT e.id, e.schedule_id, s.name AS title, e.start_date, e.user_id, u.name AS user_name
+    FROM events e
+    JOIN schedules s ON s.id = e.schedule_id
+    JOIN users u ON u.id = e.user_id
+    ORDER BY e.start_date ASC
+"#;
+
+async fn validate_payload(state: &AppState, payload: &EventPayload) -> Result<(), AppError> {
+    if payload.schedule_id.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "schedule_id es obligatorio".to_string(),
+        ));
     }
 
-    let start = DateTime::parse_from_rfc3339(&payload.start)
+    DateTime::parse_from_rfc3339(&payload.start)
         .map_err(|_| AppError::BadRequest("La fecha de inicio no es válida".to_string()))?;
-    let end = DateTime::parse_from_rfc3339(&payload.end)
-        .map_err(|_| AppError::BadRequest("La fecha de fin no es válida".to_string()))?;
 
-    if end <= start {
+    let schedule_exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM schedules WHERE id = ?")
+        .bind(&payload.schedule_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if schedule_exists == 0 {
         return Err(AppError::BadRequest(
-            "La fecha de fin debe ser mayor a la fecha de inicio".to_string(),
+            "El schedule referenciado no existe".to_string(),
         ));
     }
 
     Ok(())
+}
+
+async fn fetch_event(state: &AppState, id: &str) -> Result<EventResponse, AppError> {
+    sqlx::query_as::<_, EventRow>(SELECT_EVENT_BY_ID)
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .map(EventResponse::from)
+        .ok_or_else(|| AppError::NotFound("Evento no existe por ese id".to_string()))
 }
 
 /// Devuelve todos los eventos del calendario (compartido entre usuarios),
@@ -35,16 +64,9 @@ pub async fn list_events(
     _auth: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
-    let rows = sqlx::query_as::<_, EventRow>(
-        r#"
-        SELECT e.id, e.title, e.notes, e.start_date, e.end_date, e.user_id, u.name AS user_name
-        FROM events e
-        JOIN users u ON u.id = e.user_id
-        ORDER BY e.start_date ASC
-        "#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = sqlx::query_as::<_, EventRow>(SELECT_ALL_EVENTS)
+        .fetch_all(&state.pool)
+        .await?;
 
     let eventos: Vec<EventResponse> = rows.into_iter().map(EventResponse::from).collect();
 
@@ -56,34 +78,19 @@ pub async fn create_event(
     State(state): State<AppState>,
     Json(payload): Json<EventPayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    validate_payload(&payload)?;
+    validate_payload(&state, &payload).await?;
 
     let id = Uuid::new_v4().to_string();
-    let notes = payload.notes.unwrap_or_default();
 
-    sqlx::query(
-        "INSERT INTO events (id, title, notes, start_date, end_date, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(&payload.title)
-    .bind(&notes)
-    .bind(&payload.start)
-    .bind(&payload.end)
-    .bind(&auth.uid)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("INSERT INTO events (id, schedule_id, start_date, user_id) VALUES (?, ?, ?, ?)")
+        .bind(&id)
+        .bind(&payload.schedule_id)
+        .bind(&payload.start)
+        .bind(&auth.uid)
+        .execute(&state.pool)
+        .await?;
 
-    let evento = EventResponse {
-        id,
-        title: payload.title,
-        notes,
-        start: payload.start,
-        end: payload.end,
-        user: EventUser {
-            uid: auth.uid,
-            name: auth.name,
-        },
-    };
+    let evento = fetch_event(&state, &id).await?;
 
     Ok((StatusCode::CREATED, Json(json!({ "ok": true, "evento": evento }))))
 }
@@ -102,7 +109,7 @@ pub async fn update_event(
     Path(id): Path<String>,
     Json(payload): Json<EventPayload>,
 ) -> Result<Json<Value>, AppError> {
-    validate_payload(&payload)?;
+    validate_payload(&state, &payload).await?;
 
     let owner_id = find_owner(&state, &id).await?;
 
@@ -112,28 +119,14 @@ pub async fn update_event(
         ));
     }
 
-    let notes = payload.notes.unwrap_or_default();
-
-    sqlx::query("UPDATE events SET title = ?, notes = ?, start_date = ?, end_date = ? WHERE id = ?")
-        .bind(&payload.title)
-        .bind(&notes)
+    sqlx::query("UPDATE events SET schedule_id = ?, start_date = ? WHERE id = ?")
+        .bind(&payload.schedule_id)
         .bind(&payload.start)
-        .bind(&payload.end)
         .bind(&id)
         .execute(&state.pool)
         .await?;
 
-    let evento = EventResponse {
-        id,
-        title: payload.title,
-        notes,
-        start: payload.start,
-        end: payload.end,
-        user: EventUser {
-            uid: auth.uid,
-            name: auth.name,
-        },
-    };
+    let evento = fetch_event(&state, &id).await?;
 
     Ok(Json(json!({ "ok": true, "evento": evento })))
 }
@@ -163,36 +156,22 @@ pub async fn delete_event(
 mod tests {
     use super::*;
 
-    fn payload(title: &str, start: &str, end: &str) -> EventPayload {
+    fn payload(schedule_id: &str, start: &str) -> EventPayload {
         EventPayload {
-            title: title.to_string(),
-            notes: None,
+            schedule_id: schedule_id.to_string(),
             start: start.to_string(),
-            end: end.to_string(),
         }
     }
 
     #[test]
-    fn accepts_a_well_formed_payload() {
-        let p = payload("Cumpleaños", "2026-09-10T15:00:00.000Z", "2026-09-10T17:00:00.000Z");
-        assert!(validate_payload(&p).is_ok());
-    }
-
-    #[test]
-    fn rejects_an_empty_title() {
-        let p = payload("   ", "2026-09-10T15:00:00.000Z", "2026-09-10T17:00:00.000Z");
-        assert!(validate_payload(&p).is_err());
-    }
-
-    #[test]
     fn rejects_dates_that_are_not_rfc3339() {
-        let p = payload("Cumpleaños", "not-a-date", "2026-09-10T17:00:00.000Z");
-        assert!(validate_payload(&p).is_err());
+        let p = payload("schedule-1", "not-a-date");
+        assert!(DateTime::parse_from_rfc3339(&p.start).is_err());
     }
 
     #[test]
-    fn rejects_an_end_that_is_not_after_start() {
-        let p = payload("Cumpleaños", "2026-09-10T17:00:00.000Z", "2026-09-10T15:00:00.000Z");
-        assert!(validate_payload(&p).is_err());
+    fn rejects_an_empty_schedule_id() {
+        let p = payload("   ", "2026-09-10T15:00:00.000Z");
+        assert!(p.schedule_id.trim().is_empty());
     }
 }

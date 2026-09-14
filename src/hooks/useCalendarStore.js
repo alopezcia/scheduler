@@ -9,52 +9,36 @@ export const useCalendarStore = () => {
   
     const dispatch = useDispatch();
     const { events, activeEvent } = useSelector( state => state.calendar );
-    const { user } = useSelector( state => state.auth );
 
     const setActiveEvent = ( calendarEvent ) => {
         dispatch( onSetActiveEvent( calendarEvent ) )
     }
 
     const startSavingEvent = async( calendarEvent ) => {
-        
+
+        const payload = { schedule_id: calendarEvent.schedule_id, start: calendarEvent.start };
+
         try {
             if( calendarEvent.id ) {
                 // Actualizando
-                await calendarApi.put(`/events/${ calendarEvent.id }`, calendarEvent );
-                dispatch( onUpdateEvent({ ...calendarEvent, user }) );
+                const { data } = await calendarApi.put(`/events/${ calendarEvent.id }`, payload );
+                const [ updated ] = convertEventsToDateEvents([ data.evento ]);
+                dispatch( onUpdateEvent( updated ) );
                 return;
-            } 
-    
+            }
+
             // Creando
-            const { data } = await calendarApi.post('/events', calendarEvent );
-            dispatch( onAddNewEvent({ ...calendarEvent, id: data.evento.id, user }) );
+            const { data } = await calendarApi.post('/events', payload );
+            const [ created ] = convertEventsToDateEvents([ data.evento ]);
+            dispatch( onAddNewEvent( created ) );
 
         } catch (error) {
             console.log(error);
             Swal.fire('Error al guardar', error.response.data.msg, 'error');
         }
 
-       
-        
-    }
 
-    const startSavingManyEvents = async( calendarEvents = [] ) => {
 
-        let successCount = 0;
-        let errorCount = 0;
-
-        for ( const calendarEvent of calendarEvents ) {
-            try {
-                const { data } = await calendarApi.post('/events', calendarEvent );
-                dispatch( onAddNewEvent({ ...calendarEvent, id: data.evento.id, user }) );
-                successCount++;
-            } catch (error) {
-                console.log(error);
-                errorCount++;
-            }
-        }
-
-        return { successCount, errorCount };
     }
 
     const startDeletingEvent = async() => {
@@ -97,6 +81,5 @@ export const useCalendarStore = () => {
         startDeletingEvent,
         startLoadingEvents,
         startSavingEvent,
-        startSavingManyEvents,
     }
 }

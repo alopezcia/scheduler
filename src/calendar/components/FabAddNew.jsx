@@ -1,4 +1,3 @@
-import { addHours } from 'date-fns';
 import { useCalendarStore, useUiStore } from '../../hooks';
 
 
@@ -9,15 +8,8 @@ export const FabAddNew = () => {
 
     const handleClickNew = () => {
         setActiveEvent({
-            title: '',
-            notes: '',
+            schedule_id: '',
             start: new Date(),
-            end: addHours( new Date(), 2 ),
-            bgColor: '#fafafa',
-            user: {
-                _id: '123',
-                name: 'Fernando'
-            }
         });
         openDateModal();
     }

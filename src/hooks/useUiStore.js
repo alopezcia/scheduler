@@ -1,5 +1,5 @@
 import { useDispatch, useSelector } from 'react-redux';
-import { onCloseDateModal, onOpenDateModal, onCloseCronModal, onOpenCronModal } from '../store';
+import { onCloseDateModal, onOpenDateModal } from '../store';
 
 
 export const useUiStore = () => {
@@ -8,7 +8,6 @@ export const useUiStore = () => {
 
     const {
         isDateModalOpen,
-        isCronModalOpen,
     } = useSelector( state => state.ui );
 
     const openDateModal = () => {
@@ -25,32 +24,14 @@ export const useUiStore = () => {
             : openDateModal();
     }
 
-    const openCronModal = () => {
-        dispatch( onOpenCronModal() )
-    }
-
-    const closeCronModal = () => {
-        dispatch( onCloseCronModal() )
-    }
-
-    const toggleCronModal = () => {
-        (isCronModalOpen)
-            ? closeCronModal()
-            : openCronModal();
-    }
-
     return {
         //* Propiedades
         isDateModalOpen,
-        isCronModalOpen,
 
         //* Métodos
         closeDateModal,
         openDateModal,
         toggleDateModal,
-        closeCronModal,
-        openCronModal,
-        toggleCronModal,
     }
 
 }

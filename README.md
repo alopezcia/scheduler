@@ -1,9 +1,11 @@
 # Calendar App
 
 Aplicación de calendario colaborativo hecha con **React + Redux Toolkit**. Permite registrarse/iniciar
-sesión, crear, editar y eliminar eventos en un calendario compartido (`react-big-calendar`), y generar
-varios eventos de una sola vez a partir de una expresión **crontab**. También incluye una sección de
-**Mantenimiento SCADA** para administrar sites, assets, connections, tags y schedules.
+sesión y ver un calendario compartido (`react-big-calendar`) cuyos eventos siempre se generan a partir
+de una **programación (schedule) SCADA**: una vez al guardar el schedule (una ocurrencia si es
+`once`, varias si es `cron`, con la expresión crontab del propio schedule), o a mano desde el
+calendario eligiendo el schedule y la fecha. También incluye una sección de **Mantenimiento SCADA**
+para administrar sites, assets, connections, tags y schedules.
 
 El backend que consume este frontend vive en [`backend/`](./backend) — una API REST en **Rust**
 (axum + SQLite). Ver [`backend/README.md`](./backend/README.md) para su documentación completa.
@@ -15,7 +17,7 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
 - **Vite** como bundler/dev server
 - **react-big-calendar** para la vista de calendario y **react-datepicker** para los selectores de fecha
 - **axios** para las llamadas HTTP a la API
-- **cron-parser** para interpretar expresiones crontab en el alta masiva de eventos
+- **cron-parser** para calcular las fechas de las ocurrencias que un schedule `cron` genera como events
 - **sweetalert2** para notificaciones/errores
 - **Jest** + **@testing-library/react** para pruebas
 
@@ -37,11 +39,9 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
 │   │
 │   ├── calendar/                 # Módulo de calendario (UI)
 │   │   ├── components/
-│   │   │   ├── CalendarModal.jsx    # Alta/edición de un evento individual
-│   │   │   ├── CalendarCronModal.jsx# Alta masiva de eventos a partir de una expresión crontab
+│   │   │   ├── CalendarModal.jsx    # Alta/edición de un evento: elegir schedule + fecha
 │   │   │   ├── CalendarEvent.jsx    # Render de un evento dentro del calendario
 │   │   │   ├── FabAddNew.jsx        # Botón flotante: nuevo evento
-│   │   │   ├── FabAddCron.jsx       # Botón flotante: alta masiva vía crontab
 │   │   │   ├── FabDelete.jsx        # Botón flotante: eliminar evento activo
 │   │   │   └── Navbar.jsx
 │   │   └── pages/CalendarPage.jsx  # Página principal, arma el <Calendar /> y los modales/FABs
@@ -62,13 +62,13 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
 │   ├── store/                    # Redux Toolkit
 │   │   ├── auth/authSlice.js       # status, user, errorMessage
 │   │   ├── calendar/calendarSlice.js # events, activeEvent, isLoadingEvents
-│   │   ├── ui/uiSlice.js           # isDateModalOpen, isCronModalOpen
+│   │   ├── ui/uiSlice.js           # isDateModalOpen
 │   │   └── store.js
 │   │
 │   ├── hooks/                    # Hooks que encapsulan dispatch + llamadas a la API
 │   │   ├── useAuthStore.js         # startLogin, startRegister, checkAuthToken, startLogout
-│   │   ├── useCalendarStore.js     # startSavingEvent, startSavingManyEvents, startDeletingEvent...
-│   │   ├── useUiStore.js           # abrir/cerrar los modales
+│   │   ├── useCalendarStore.js     # startSavingEvent, startDeletingEvent, startLoadingEvents...
+│   │   ├── useUiStore.js           # abrir/cerrar el modal de evento
 │   │   └── useForm.js
 │   │
 │   └── helpers/                  # Funciones puras reutilizables
@@ -86,21 +86,26 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
 - **`store/auth` + `hooks/useAuthStore`**: maneja login, registro y renovación de token JWT contra
   `POST /auth`, `POST /auth/new` y `GET /auth/renew`. El token se guarda en `localStorage` y se envía
   en cada petición mediante el header `x-token` (interceptor en `api/calendarApi.js`).
-- **`store/calendar` + `hooks/useCalendarStore`**: carga (`GET /events`), crea/edita
-  (`POST`/`PUT /events`) y elimina (`DELETE /events/:id`) eventos individuales, además de
-  `startSavingManyEvents` para el alta masiva.
-- **`CalendarCronModal` + `helpers/generateCronDates`**: a partir de una expresión crontab estándar
-  (ej. `0 9 * * 1-5`), una fecha de referencia y un número de repeticiones, genera N fechas de inicio
-  (con `cron-parser`) y crea un evento por cada una, reutilizando `startSavingManyEvents`.
-- **`store/ui` + `hooks/useUiStore`**: controla la visibilidad de los dos modales de alta de eventos
-  (individual y por crontab).
+- **`store/calendar` + `hooks/useCalendarStore`**: carga (`GET /events`) y elimina
+  (`DELETE /events/:id`) eventos; `startSavingEvent` crea/edita (`POST`/`PUT /events`) un evento
+  como `{ schedule_id, start }` — un evento siempre es la ocurrencia de un schedule SCADA, nunca un
+  título/notas libres.
+- **`CalendarModal`**: alta/edición de un evento eligiendo un schedule existente (`GET /schedules`)
+  y una fecha; no pide título ni fecha de fin (se calculan en el backend a partir del schedule).
+- **`store/ui` + `hooks/useUiStore`**: controla la visibilidad del modal de alta/edición de eventos.
+- **`scada/` → `SchedulesMaintenancePage` + `helpers/generateCronDates`**: al crear un schedule se
+  generan automáticamente sus events en el calendario — uno solo si el disparador es `once` (en su
+  `start_date`), o varias ocurrencias si es `cron` (usando `cron-parser` sobre su `cron_expr` para
+  calcular N fechas, con `POST /events` por cada una).
 - **`scada/`**: sección de mantenimiento (listar/crear/editar/borrar) para las entidades SCADA del
   backend — `sites`, `assets`, `connections`, `tags` y `schedules`. Se accede con el botón
   **Mantenimiento** del `Navbar` (ruta `/scada`), que alterna a **Calendario** para volver. `ScadaPage`
   muestra una barra de tabs y renderiza la página de la entidad activa; cada página sólo define sus
   columnas de tabla y campos de formulario (incluyendo los `select` de claves foráneas, p. ej. el
   `site_id` de un asset o el `connection_id` de un tag) y delega el listado, el modal y las llamadas
-  `GET`/`POST`/`PUT`/`DELETE` a `components/EntityMaintenance.jsx`. Los campos `config`/`address`/
+  `GET`/`POST`/`PUT`/`DELETE` a `components/EntityMaintenance.jsx`, que además expone un callback
+  `onSaved` para que una página reaccione al item recién creado/editado (usado por
+  `SchedulesMaintenancePage` para generar los events). Los campos `config`/`address`/
   `target_value`/`allowed_values` se editan como JSON en un textarea y se valida su sintaxis antes de
   enviarlos; el `asset_id` de un tag se toma automáticamente del `connection_id` elegido, igual que
   exige el backend. Ver [`backend/README.md`](./backend/README.md#modelo-scada) para el contrato de

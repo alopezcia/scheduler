@@ -100,12 +100,14 @@ export const EntityMaintenance = ({
     title,
     endpoint,
     listKey,
+    itemKey = listKey.endsWith('s') ? listKey.slice(0, -1) : listKey,
     columns,
     fields,
     getEmptyForm,
     toFormValues,
     toPayload,
     onItemsChange,
+    onSaved,
     rowKey = 'id',
 }) => {
 
@@ -170,13 +172,15 @@ export const EntityMaintenance = ({
             return;
         }
 
+        const isCreate = !editingId;
+
         setIsSaving(true);
         try {
-            if ( editingId ) {
-                await calendarApi.put(`${ endpoint }/${ editingId }`, payload );
-            } else {
-                await calendarApi.post( endpoint, payload );
-            }
+            const { data } = isCreate
+                ? await calendarApi.post( endpoint, payload )
+                : await calendarApi.put(`${ endpoint }/${ editingId }`, payload );
+
+            await onSaved?.({ item: data[itemKey], formValues, isCreate });
             await loadItems();
             setIsModalOpen(false);
             setFormSubmitted(false);

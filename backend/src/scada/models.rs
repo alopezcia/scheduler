@@ -61,7 +61,6 @@ pub enum ReadWrite {
 pub enum TriggerType {
     Once,
     Cron,
-    CalendarEvent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
@@ -289,7 +288,9 @@ pub struct TagPayload {
 
 // ---------- Schedules ----------
 // Generaliza `events::EventPayload`: en vez de solo título/notas, una
-// programación apunta a un tag y a un valor objetivo.
+// programación apunta a un tag y a un valor objetivo. Ya no referencia un
+// event (era la relación inversa); ahora es el event el que se genera a
+// partir del schedule (ver `events::models`).
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct ScheduleRow {
@@ -299,7 +300,6 @@ pub struct ScheduleRow {
     pub target_value: Json<Value>,
     pub trigger_type: TriggerType,
     pub cron_expr: Option<String>,
-    pub event_id: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub enabled: bool,
@@ -316,7 +316,6 @@ pub struct ScheduleResponse {
     pub target_value: Value,
     pub trigger_type: TriggerType,
     pub cron_expr: Option<String>,
-    pub event_id: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub enabled: bool,
@@ -333,7 +332,6 @@ impl From<ScheduleRow> for ScheduleResponse {
             target_value: row.target_value.0,
             trigger_type: row.trigger_type,
             cron_expr: row.cron_expr,
-            event_id: row.event_id,
             start_date: row.start_date,
             end_date: row.end_date,
             enabled: row.enabled,
@@ -353,8 +351,6 @@ pub struct SchedulePayload {
     pub trigger_type: TriggerType,
     #[serde(default)]
     pub cron_expr: Option<String>,
-    #[serde(default)]
-    pub event_id: Option<String>,
     #[serde(default)]
     pub start_date: Option<String>,
     #[serde(default)]

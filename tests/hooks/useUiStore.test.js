@@ -21,7 +21,7 @@ describe('Pruebas en useUiStore', () => {
 
     test('debe de regresar los valores por defecto', () => {
 
-        const mockStore = getMockStore({ isDateModalOpen: false, isCronModalOpen: false });
+        const mockStore = getMockStore({ isDateModalOpen: false });
 
         const { result } = renderHook( () => useUiStore(), {
             wrapper: ({ children }) => <Provider store={ mockStore }>{ children }</Provider>
@@ -29,19 +29,15 @@ describe('Pruebas en useUiStore', () => {
 
         expect(result.current).toEqual({
             isDateModalOpen: false,
-            isCronModalOpen: false,
             closeDateModal: expect.any(Function),
             openDateModal: expect.any(Function),
             toggleDateModal: expect.any(Function),
-            closeCronModal: expect.any(Function),
-            openCronModal: expect.any(Function),
-            toggleCronModal: expect.any(Function),
         });
 
     });
 
     test('openDateModal debe de colocar tru en el isDateModalOpen', () => {
-        
+
         const mockStore = getMockStore({ isDateModalOpen: false });
         const { result } = renderHook( () => useUiStore(), {
             wrapper: ({ children }) => <Provider store={ mockStore }>{ children }</Provider>
@@ -60,7 +56,7 @@ describe('Pruebas en useUiStore', () => {
 
 
     test('closeDateModal debe de colocar false en isDateModalOpen', () => {
-        
+
         const mockStore = getMockStore({ isDateModalOpen: true });
         const { result } = renderHook( () => useUiStore(), {
             wrapper: ({ children }) => <Provider store={ mockStore }>{ children }</Provider>
@@ -76,7 +72,7 @@ describe('Pruebas en useUiStore', () => {
 
 
     test('toggleDateModal debe de cambiar el estado respectivamente', () => {
-        
+
         const mockStore = getMockStore({ isDateModalOpen: true });
         const { result } = renderHook( () => useUiStore(), {
             wrapper: ({ children }) => <Provider store={ mockStore }>{ children }</Provider>
@@ -86,7 +82,7 @@ describe('Pruebas en useUiStore', () => {
             result.current.toggleDateModal();
         });
         expect( result.current.isDateModalOpen ).toBeFalsy();
-        
+
         act(() => {
             result.current.toggleDateModal();
         });
@@ -95,5 +91,5 @@ describe('Pruebas en useUiStore', () => {
     });
 
 
-    
+
 });

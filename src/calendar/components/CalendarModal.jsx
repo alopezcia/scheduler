@@ -1,8 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
-import { addHours, differenceInSeconds } from 'date-fns';
-
-import Swal from 'sweetalert2';
-import 'sweetalert2/dist/sweetalert2.min.css';
+import { useEffect, useMemo, useState } from 'react';
 
 import Modal from 'react-modal';
 
@@ -10,6 +6,7 @@ import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
 import es from 'date-fns/locale/es';
+import { calendarApi } from '../../api';
 import { useCalendarStore, useUiStore } from '../../hooks';
 import { getEnvVariables } from '../../helpers';
 
@@ -38,43 +35,48 @@ export const CalendarModal = () => {
     const { activeEvent, startSavingEvent } = useCalendarStore();
 
     const [ formSubmitted, setFormSubmitted ] = useState(false);
+    const [ schedules, setSchedules ] = useState([]);
 
     const [formValues, setFormValues] = useState({
-        title: '',
-        notes: '',
+        schedule_id: '',
         start: new Date(),
-        end: addHours( new Date(), 2),
     });
 
-    const titleClass = useMemo(() => {
+    useEffect(() => {
+        calendarApi.get('/schedules')
+            .then(({ data }) => setSchedules( data.schedules || [] ))
+            .catch(() => setSchedules([]));
+    }, []);
+
+    const scheduleClass = useMemo(() => {
         if ( !formSubmitted ) return '';
 
-        return ( formValues.title.length > 0 )
+        return ( formValues.schedule_id )
             ? ''
             : 'is-invalid';
 
-    }, [ formValues.title, formSubmitted ])
+    }, [ formValues.schedule_id, formSubmitted ])
 
     useEffect(() => {
       if ( activeEvent !== null ) {
           setFormValues({ ...activeEvent });
-      }    
-      
+      }
+
     }, [ activeEvent ])
-    
 
 
-    const onInputChanged = ({ target }) => {
+
+    const onScheduleChanged = ({ target }) => {
         setFormValues({
             ...formValues,
-            [target.name]: target.value
+            schedule_id: target.value
         })
     }
 
-    const onDateChanged = ( event, changing ) => {
+    const onDateChanged = ( event ) => {
         setFormValues({
             ...formValues,
-            [changing]: event
+            start: event
         })
     }
 
@@ -86,18 +88,8 @@ export const CalendarModal = () => {
         event.preventDefault();
         setFormSubmitted(true);
 
-        const difference = differenceInSeconds( formValues.end, formValues.start );
-        
-        if ( isNaN( difference ) || difference <= 0 ) {
-            Swal.fire('Fechas incorrectas','Revisar las fechas ingresadas','error');
-            return;
-        }
-        
-        if ( formValues.title.length <= 0 ) return;
-        
-        console.log(formValues);
+        if ( !formValues.schedule_id ) return;
 
-        // TODO: 
         await startSavingEvent( formValues );
         closeDateModal();
         setFormSubmitted(false);
@@ -114,63 +106,36 @@ export const CalendarModal = () => {
         overlayClassName="modal-fondo"
         closeTimeoutMS={ 200 }
     >
-        <h1> Nuevo evento </h1>
+        <h1> { formValues.id ? 'Editar evento' : 'Nuevo evento' } </h1>
         <hr />
         <form className="container" onSubmit={ onSubmit }>
 
             <div className="form-group mb-2">
-                <label>Fecha y hora inicio</label>
-                <DatePicker 
+                <label>Schedule</label>
+                <select
+                    className={ `form-control ${ scheduleClass }`}
+                    value={ formValues.schedule_id }
+                    onChange={ onScheduleChanged }
+                >
+                    <option value="">-- Seleccione --</option>
+                    { schedules.map( schedule => (
+                        <option key={ schedule.id } value={ schedule.id }>{ schedule.name }</option>
+                    ))}
+                </select>
+                <small className="form-text text-muted">El evento dispara esta programación en la fecha indicada</small>
+            </div>
+
+            <div className="form-group mb-2">
+                <label>Fecha y hora</label>
+                <DatePicker
                     selected={ formValues.start }
-                    onChange={ (event) => onDateChanged(event, 'start') }
+                    onChange={ onDateChanged }
                     className="form-control"
                     dateFormat="Pp"
                     showTimeSelect
                     locale="es"
                     timeCaption="Hora"
                 />
-            </div>
-
-            <div className="form-group mb-2">
-                <label>Fecha y hora fin</label>
-                <DatePicker 
-                    minDate={ formValues.start }
-                    selected={ formValues.end }
-                    onChange={ (event) => onDateChanged(event, 'end') }
-                    className="form-control"
-                    dateFormat="Pp"
-                    showTimeSelect
-                    locale="es"
-                    timeCaption="Hora"
-                />
-            </div>
-
-            <hr />
-            <div className="form-group mb-2">
-                <label>Titulo y notas</label>
-                <input 
-                    type="text" 
-                    className={ `form-control ${ titleClass }`}
-                    placeholder="Título del evento"
-                    name="title"
-                    autoComplete="off"
-                    value={ formValues.title }
-                    onChange={ onInputChanged }
-                />
-                <small id="emailHelp" className="form-text text-muted">Una descripción corta</small>
-            </div>
-
-            <div className="form-group mb-2">
-                <textarea 
-                    type="text" 
-                    className="form-control"
-                    placeholder="Notas"
-                    rows="5"
-                    name="notes"
-                    value={ formValues.notes }
-                    onChange={ onInputChanged }
-                ></textarea>
-                <small id="emailHelp" className="form-text text-muted">Información adicional</small>
             </div>
 
             <button

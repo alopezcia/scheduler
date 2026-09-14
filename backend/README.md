@@ -42,10 +42,10 @@ valores por defecto no hace falta tocar nada del lado de React.
 cargo run
 ```
 
-Al iniciar se aplican automáticamente las migraciones (`migrations/0001_init.sql` y
-`migrations/0002_scada_model.sql`), creando `calendar.db` con las tablas `users`, `events` y el
-modelo SCADA (`sites`, `assets`, `connections`, `tags`, `schedules`, `interlocks`,
-`command_executions`) si no existen.
+Al iniciar se aplican automáticamente las migraciones (`migrations/0001_init.sql`,
+`migrations/0002_scada_model.sql` y `migrations/0003_events_from_schedules.sql`), creando
+`calendar.db` con las tablas `users`, `events` y el modelo SCADA (`sites`, `assets`, `connections`,
+`tags`, `schedules`, `interlocks`, `command_executions`) si no existen.
 
 ## Tests
 
@@ -72,23 +72,29 @@ El JWT se envía y se valida en el header **`x-token`** (no `Authorization: Bear
 
 ### Eventos (todas requieren `x-token`)
 
+Un evento ya no es una entidad libre: es siempre la ocurrencia de un **schedule** SCADA en una
+fecha concreta (ver más abajo). Se genera automáticamente al guardar un schedule, o a mano
+eligiendo el schedule y la fecha desde el calendario.
+
 | Método | Ruta | Body | Respuesta OK |
 | --- | --- | --- | --- |
 | GET | `/api/events` | — | `{ ok, eventos: [...] }` (todos los eventos, de todos los usuarios) |
-| POST | `/api/events` | `{ title, notes?, start, end }` | `201 { ok, evento }` |
-| PUT | `/api/events/{id}` | `{ title, notes?, start, end }` | `{ ok, evento }` (solo el dueño puede editar) |
+| POST | `/api/events` | `{ schedule_id, start }` | `201 { ok, evento }` |
+| PUT | `/api/events/{id}` | `{ schedule_id, start }` | `{ ok, evento }` (solo el dueño puede editar) |
 | DELETE | `/api/events/{id}` | — | `{ ok: true }` (solo el dueño puede borrar) |
 
-`start`/`end` son strings ISO-8601 (lo que produce `Date.toJSON()` en el frontend). Cada evento se
-serializa como:
+`start` es un string ISO-8601 (lo que produce `Date.toJSON()` en el frontend). `end` no se guarda:
+se calcula al vuelo como `start + 30 minutos` solo para que `react-big-calendar` pueda dibujar el
+evento como un bloque. `title` tampoco se guarda en el evento: siempre refleja el `name` del
+schedule que lo generó (vía JOIN). Cada evento se serializa como:
 
 ```json
 {
   "id": "uuid",
+  "schedule_id": "uuid-del-schedule",
   "title": "...",
-  "notes": "...",
   "start": "2026-09-10T15:00:00.000Z",
-  "end": "2026-09-10T17:00:00.000Z",
+  "end": "2026-09-10T15:30:00.000Z",
   "user": { "uid": "uuid-del-dueño", "name": "Nombre" }
 }
 ```
@@ -103,7 +109,8 @@ Jerarquía: un **site** (planta) contiene **assets** (planta → área → equip
 `parent_asset_id` autorreferente); un asset expone una o más **connections** (un PLC/gateway
 accesible por OPC UA, MQTT o S7); cada connection expone **tags** (los puntos SCADA: telemandos,
 consignas o medidas); y un tag puede tener **schedules** que escriben un valor objetivo sobre él de
-forma puntual, por cron, o ligada a un evento del calendario.
+forma puntual (`once`) o recurrente (`cron`). Un schedule no referencia un evento del calendario:
+es al revés, cada schedule genera sus propios eventos (ver `/api/events` más arriba).
 
 Todas las rutas de este bloque requieren `x-token` y comparten el formato de error `{ ok: false, msg }`.
 Las respuestas de lista devuelven `{ ok, <entidad-en-plural>: [...] }`; crear/actualizar devuelven
@@ -165,9 +172,9 @@ Generaliza el calendario: en vez de solo título/notas, una programación apunta
 | Método | Ruta | Body / Query | Notas |
 | --- | --- | --- | --- |
 | GET | `/api/schedules` | Query opcional `tag_id`, `enabled` (`true`/`false`) | |
-| POST | `/api/schedules` | `{ name, tag_id, target_value, trigger_type, cron_expr?, event_id?, start_date?, end_date?, enabled?, requires_confirmation? }` | `created_by` se toma del `x-token`. `trigger_type`: `once` (requiere `start_date`), `cron` (requiere `cron_expr`), o `calendar_event` (requiere `event_id`, que debe existir en `events`). |
+| POST | `/api/schedules` | `{ name, tag_id, target_value, trigger_type, cron_expr?, start_date?, end_date?, enabled?, requires_confirmation? }` | `created_by` se toma del `x-token`. `trigger_type`: `once` (requiere `start_date`) o `cron` (requiere `cron_expr`). No referencia ningún evento; el frontend genera los eventos correspondientes llamando a `POST /api/events` con este `id` recién creado. |
 | PUT | `/api/schedules/{id}` | igual que POST | `created_by` no cambia. |
-| DELETE | `/api/schedules/{id}` | — | |
+| DELETE | `/api/schedules/{id}` | — | Borra en cascada (`ON DELETE CASCADE`) los eventos generados a partir de él. |
 
 `interlocks` (enclavamientos) y `command_executions` (auditoría de comandos) ya tienen modelo y
 migración (`src/scada/models.rs`, `migrations/0002_scada_model.sql`) pero todavía no tienen CRUD
@@ -175,15 +182,16 @@ expuesto en la API.
 
 ## Base de datos
 
-SQLite (ver `migrations/0001_init.sql` y `migrations/0002_scada_model.sql`):
+SQLite (ver `migrations/0001_init.sql`, `migrations/0002_scada_model.sql` y
+`migrations/0003_events_from_schedules.sql`):
 
 - `users (id, name, email UNIQUE, password_hash, created_at)`
-- `events (id, title, notes, start_date, end_date, user_id -> users.id, created_at)`
+- `events (id, schedule_id -> schedules.id, start_date, user_id -> users.id, created_at)`
 - `sites (id, name, created_at)`
 - `assets (id, site_id -> sites.id, parent_asset_id -> assets.id, name, kind, created_at)`
 - `connections (id, asset_id -> assets.id, name, protocol, config, status, last_seen, created_at)`
 - `tags (id, connection_id -> connections.id, asset_id -> assets.id, name, description, tag_kind, data_type, unit, address, read_write, min_value, max_value, allowed_values, requires_sbo, requires_ack, created_at)`
-- `schedules (id, name, tag_id -> tags.id, target_value, trigger_type, cron_expr, event_id -> events.id, start_date, end_date, enabled, requires_confirmation, created_by -> users.id, created_at)`
+- `schedules (id, name, tag_id -> tags.id, target_value, trigger_type, cron_expr, start_date, end_date, enabled, requires_confirmation, created_by -> users.id, created_at)`
 - `interlocks (id, tag_id -> tags.id, condition_tag_id -> tags.id, operator, condition_value, action, created_at)`
 - `command_executions (id, schedule_id -> schedules.id, tag_id -> tags.id, requested_value, requested_by -> users.id, status, sent_at, ack_at, response, error_message, latency_ms, created_at)`
 
