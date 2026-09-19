@@ -11,6 +11,12 @@ if [ -z "${JWT_SECRET:-}" ]; then
     export JWT_SECRET="$(cat /data/jwt_secret)"
 fi
 
+# Si existe una base de datos semilla (docker/seed/calendar.db) y el volumen
+# no tiene base todavia, se usa como punto de partida. Nunca pisa datos existentes.
+if [ ! -e /data/calendar.db ] && [ -f /seed/calendar.db ]; then
+    cp /seed/calendar.db /data/calendar.db
+fi
+
 calendar-backend &
 BACKEND_PID=$!
 nginx -g 'daemon off;' &

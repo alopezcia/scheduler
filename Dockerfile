@@ -29,6 +29,7 @@ RUN chmod +x /usr/local/bin/calendar-backend
 # Frontend estático
 COPY --from=frontend /app/dist /usr/share/nginx/html
 COPY docker/nginx.conf /etc/nginx/conf.d/app.conf
+COPY docker/seed/ /seed/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && mkdir -p /data
 
