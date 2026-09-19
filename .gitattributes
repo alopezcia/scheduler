@@ -1,0 +1,5 @@
+# Los ficheros usados dentro del contenedor Linux deben conservar saltos de línea LF
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+docker-compose.yml text eol=lf
+docker/* text eol=lf
