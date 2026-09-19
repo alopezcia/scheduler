@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+tests
+*.md
+.env*
+
+# Backend: solo se necesita el ejecutable de release
+backend/.env
+backend/*.db*
+backend/scripts
+backend/target/*
+!backend/target/release
+backend/target/release/*
+!backend/target/release/calendar-backend

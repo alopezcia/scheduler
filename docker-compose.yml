@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      # Recomendado: define un secreto propio (si no, se genera y persiste en /data)
+      # JWT_SECRET: cambia-este-valor
+      ALLOWED_ORIGIN: http://localhost:8080
+    volumes:
+      - scheduler-data:/data
+    restart: unless-stopped
+
+volumes:
+  scheduler-data:
