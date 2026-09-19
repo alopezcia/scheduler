@@ -140,6 +140,54 @@ El backend que consume este frontend vive en [`backend/`](./backend) — una API
    yarn dev
    ```
 
+## Docker
+
+El `Dockerfile` de la raíz genera **una única imagen** con frontend y backend:
+
+- El frontend se compila con Vite (`VITE_API_URL=/api`) y lo sirve **nginx**, que además hace de proxy
+  de `/api/` hacia el backend, así que navegador y API comparten origen (sin CORS).
+- El backend **no se compila dentro de Docker**: la imagen (`debian:bookworm-slim`) copia el
+  ejecutable Linux `backend/target/release/calendar-backend`, que hay que generar antes.
+
+### 1. Compilar el backend para Linux
+
+Desde Linux o WSL (en Windows, un `cargo build` normal genera un `.exe` que no sirve):
+
+```bash
+cd backend
+cargo build --release
+```
+
+El binario queda en `backend/target/release/calendar-backend`. Si se recompila el backend hay que
+volver a construir la imagen, porque el binario se copia tal cual.
+
+### 2. Construir y arrancar
+
+```bash
+docker compose up --build
+```
+
+La aplicación queda en http://localhost:8080. También se puede usar Docker directamente:
+
+```bash
+docker build -t scheduler .
+docker run -d --name scheduler -p 8080:80 -v scheduler-data:/data scheduler
+```
+
+### Configuración
+
+| Variable | Por defecto | Descripción |
+| --- | --- | --- |
+| `JWT_SECRET` | generado | Secreto para firmar los JWT. Si no se define, se genera uno y se guarda en `/data/jwt_secret` |
+| `JWT_EXPIRES_SECONDS` | `86400` | Duración del token |
+| `ALLOWED_ORIGIN` | `http://localhost:8080` | Origen permitido por CORS (no afecta al acceso a través de nginx) |
+| `DATABASE_URL` | `sqlite:///data/calendar.db` | Ubicación de la base SQLite |
+
+Los datos (base SQLite y secreto JWT) viven en el volumen `/data`, así que sobreviven a reinicios y
+a reconstrucciones de la imagen. La base arranca **vacía**: no incluye el `calendar.db` local ni los
+datos de `backend/scripts/seed_water_network.py`. Para empezar de cero se elimina el volumen con
+`docker compose down -v`.
+
 ## Scripts disponibles
 
 | Comando | Descripción |
