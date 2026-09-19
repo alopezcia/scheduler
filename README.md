@@ -184,9 +184,57 @@ docker run -d --name scheduler -p 8080:80 -v scheduler-data:/data scheduler
 | `DATABASE_URL` | `sqlite:///data/calendar.db` | Ubicación de la base SQLite |
 
 Los datos (base SQLite y secreto JWT) viven en el volumen `/data`, así que sobreviven a reinicios y
-a reconstrucciones de la imagen. La base arranca **vacía**: no incluye el `calendar.db` local ni los
-datos de `backend/scripts/seed_water_network.py`. Para empezar de cero se elimina el volumen con
+a reconstrucciones de la imagen. Para empezar de cero se elimina el volumen con
 `docker compose down -v`.
+
+### Base de datos semilla (datos de prueba)
+
+Opcionalmente la imagen puede llevar una base SQLite ya cargada con datos de prueba, útil para
+distribuirla a un equipo sin acceso a internet:
+
+- Si al construir la imagen existe `docker/seed/calendar.db`, el `Dockerfile` la copia a `/seed`.
+- Al arrancar, `docker/entrypoint.sh` la copia a `/data/calendar.db` **solo si el volumen aún no tiene
+  base de datos**. Nunca pisa datos existentes; para volver a la semilla hay que eliminar el volumen
+  (`docker compose down -v`).
+- Si el fichero no existe, la imagen se construye igualmente y arranca con una base **vacía**.
+  `docker/seed/calendar.db` está en `.gitignore`, por lo que un clon limpio del repositorio siempre
+  genera una imagen sin datos.
+
+Para generar la base semilla:
+
+1. Arrancar un contenedor con un volumen vacío y registrar un usuario real (el script del paso 3 crea
+   uno sin contraseña válida si no encuentra ninguno, y con él no se podría iniciar sesión):
+
+   ```bash
+   # la base debe partir vacía: construir la imagen sin docker/seed/calendar.db
+   docker run -d --name seedgen -p 8082:80 scheduler:latest
+   curl -X POST localhost:8082/api/auth/new -H 'Content-Type: application/json' \
+     -d '{"name":"Demo SCADA","email":"demo.scada@example.com","password":"Demo1234"}'
+   docker stop seedgen
+   ```
+
+2. Copiar la base fuera del contenedor:
+
+   ```bash
+   mkdir -p seed-tmp && docker cp seedgen:/data/. seed-tmp && docker rm -fv seedgen
+   ```
+
+3. Cargar los datos de prueba (una red de distribución de agua inventada: sites, assets, connections,
+   tags, schedules, interlocks y events) y dejar la base en un único fichero, sin WAL:
+
+   ```bash
+   python backend/scripts/seed_water_network.py seed-tmp/calendar.db
+   python -c "import sqlite3; sqlite3.connect('seed-tmp/calendar.db').execute('PRAGMA journal_mode=DELETE')"
+   cp seed-tmp/calendar.db docker/seed/calendar.db && rm -r seed-tmp
+   ```
+
+4. Reconstruir la imagen con `docker compose down -v && docker compose up -d --build`. Se puede
+   entrar con el usuario y contraseña del paso 1.
+
+Notas: el script fija las fechas de los events **relativas al día en que se ejecuta** (entre hoy y
++10 días), por lo que la semilla envejece; conviene regenerarla antes de llevarla a otro equipo. La
+cuenta de la semilla tiene una contraseña conocida: cámbiala si el contenedor va a ser accesible
+desde una red.
 
 ## Scripts disponibles
 
