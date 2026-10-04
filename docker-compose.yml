@@ -1,13 +1,21 @@
 services:
   app:
     image: scheduler:latest
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: 0.2.0
     ports:
       - "8080:80"
     environment:
       # Recomendado: define un secreto propio (si no, se genera y persiste en /data)
       # JWT_SECRET: cambia-este-valor
       ALLOWED_ORIGIN: http://localhost:8080
+      # Secretos de las conexiones REST (credentials_ref "ignition-prod" -> SCHEDULER_CRED_IGNITION_PROD)
+      # SCHEDULER_CRED_IGNITION_PROD: token-o-usuario:clave
+      # SCHEDULER_ENABLED: "false"   # desactiva el scheduler dentro del contenedor
+      # POLL_INTERVAL_SECONDS: 5
+      # MAX_LATE_SECONDS: 300
     volumes:
       - scheduler-data:/data
     restart: unless-stopped

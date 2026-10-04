@@ -21,12 +21,26 @@ calendar-backend &
 BACKEND_PID=$!
 nginx -g 'daemon off;' &
 NGINX_PID=$!
+PIDS="$BACKEND_PID $NGINX_PID"
 
-trap 'kill -TERM $BACKEND_PID $NGINX_PID 2>/dev/null' TERM INT
+trap 'kill -TERM $PIDS 2>/dev/null' TERM INT
 
-# Si cualquiera de los dos procesos termina, se detiene el contenedor.
-wait -n $BACKEND_PID $NGINX_PID
+# El scheduler comparte la base de datos con el backend, que es quien la crea y aplica
+# las migraciones antes de abrir su puerto. Se espera a que escuche para arrancarlo.
+if [ "${SCHEDULER_ENABLED:-true}" = "true" ]; then
+    for _ in $(seq 1 60); do
+        (exec 3<>/dev/tcp/127.0.0.1/"${PORT:-4000}") 2>/dev/null && break
+        kill -0 "$BACKEND_PID" 2>/dev/null || break
+        sleep 1
+    done
+    scheduler &
+    SCHEDULER_PID=$!
+    PIDS="$PIDS $SCHEDULER_PID"
+fi
+
+# Si cualquiera de los procesos termina, se detiene el contenedor.
+wait -n $PIDS
 STATUS=$?
-kill -TERM $BACKEND_PID $NGINX_PID 2>/dev/null || true
+kill -TERM $PIDS 2>/dev/null || true
 wait
 exit $STATUS

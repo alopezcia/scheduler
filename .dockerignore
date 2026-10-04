@@ -5,11 +5,23 @@ tests
 *.md
 .env*
 
-# Backend: solo se necesita el ejecutable de release
+# Backend: solo se necesita el ejecutable Linux de release
 backend/.env
 backend/*.db*
 backend/scripts
 backend/target/*
-!backend/target/release
-backend/target/release/*
-!backend/target/release/calendar-backend
+!backend/target/x86_64-unknown-linux-gnu
+backend/target/x86_64-unknown-linux-gnu/*
+!backend/target/x86_64-unknown-linux-gnu/release
+backend/target/x86_64-unknown-linux-gnu/release/*
+!backend/target/x86_64-unknown-linux-gnu/release/calendar-backend
+
+# Scheduler: solo se necesita el ejecutable Linux de release
+scheduler/*
+!scheduler/target
+scheduler/target/*
+!scheduler/target/x86_64-unknown-linux-gnu
+scheduler/target/x86_64-unknown-linux-gnu/*
+!scheduler/target/x86_64-unknown-linux-gnu/release
+scheduler/target/x86_64-unknown-linux-gnu/release/*
+!scheduler/target/x86_64-unknown-linux-gnu/release/scheduler

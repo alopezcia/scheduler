@@ -146,24 +146,37 @@ del mismo SQLite los eventos vencidos y llama a la API REST del sistema SCADA. V
 
 ## Docker
 
-El `Dockerfile` de la raíz genera **una única imagen** con frontend y backend:
+El `Dockerfile` de la raíz genera **una única imagen** (versión `0.2.0`) con frontend, backend y
+[scheduler](./scheduler):
 
 - El frontend se compila con Vite (`VITE_API_URL=/api`) y lo sirve **nginx**, que además hace de proxy
   de `/api/` hacia el backend, así que navegador y API comparten origen (sin CORS).
-- El backend **no se compila dentro de Docker**: la imagen (`debian:bookworm-slim`) copia el
-  ejecutable Linux `backend/target/release/calendar-backend`, que hay que generar antes.
+- El **scheduler** corre como tercer proceso del contenedor: `entrypoint.sh` lo arranca cuando el
+  backend ya escucha (el backend crea la base de datos y aplica las migraciones). Si cualquiera de
+  los tres procesos termina, el contenedor se detiene.
+- Backend y scheduler **no se compilan dentro de Docker**: la imagen (`debian:bookworm-slim`) copia
+  los ejecutables Linux ya compilados, que hay que generar antes.
 
-### 1. Compilar el backend para Linux
+### 1. Compilar backend y scheduler para Linux
 
-Desde Linux o WSL (en Windows, un `cargo build` normal genera un `.exe` que no sirve):
+En Windows un `cargo build` normal genera un `.exe` que no sirve. Con `zig` y `cargo-zigbuild`
+(`cargo install cargo-zigbuild`) se compila para Linux desde cualquier SO, fijando glibc 2.31 para que
+el binario funcione en la imagen:
 
 ```bash
-cd backend
-cargo build --release
+rustup target add x86_64-unknown-linux-gnu
+(cd backend   && cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.31)
+(cd scheduler && cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.31)
 ```
 
-El binario queda en `backend/target/release/calendar-backend`. Si se recompila el backend hay que
-volver a construir la imagen, porque el binario se copia tal cual.
+Desde Linux o WSL basta `cargo build --release --target x86_64-unknown-linux-gnu` en cada carpeta.
+Los binarios quedan en `backend/target/x86_64-unknown-linux-gnu/release/calendar-backend` y
+`scheduler/target/x86_64-unknown-linux-gnu/release/scheduler`. Si se recompila alguno hay que volver a
+construir la imagen, porque se copian tal cual.
+
+> Los ficheros de `backend/migrations/` se guardan siempre con saltos de línea **LF**
+> (`.gitattributes`): sqlx valida cada migración por el checksum de sus bytes, así que un cambio
+> LF/CRLF haría que una base ya creada rechace al backend (`VersionMismatch`).
 
 ### 2. Construir y arrancar
 
@@ -174,7 +187,7 @@ docker compose up --build
 La aplicación queda en http://localhost:8080. También se puede usar Docker directamente:
 
 ```bash
-docker build -t scheduler .
+docker build -t scheduler:0.2.0 -t scheduler:latest .
 docker run -d --name scheduler -p 8080:80 -v scheduler-data:/data scheduler
 ```
 
@@ -185,7 +198,14 @@ docker run -d --name scheduler -p 8080:80 -v scheduler-data:/data scheduler
 | `JWT_SECRET` | generado | Secreto para firmar los JWT. Si no se define, se genera uno y se guarda en `/data/jwt_secret` |
 | `JWT_EXPIRES_SECONDS` | `86400` | Duración del token |
 | `ALLOWED_ORIGIN` | `http://localhost:8080` | Origen permitido por CORS (no afecta al acceso a través de nginx) |
-| `DATABASE_URL` | `sqlite:///data/calendar.db` | Ubicación de la base SQLite |
+| `DATABASE_URL` | `sqlite:///data/calendar.db` | Ubicación de la base SQLite (la comparten backend y scheduler) |
+| `SCHEDULER_ENABLED` | `true` | Con `false` no se arranca el scheduler dentro del contenedor |
+| `POLL_INTERVAL_SECONDS` | `5` | Cada cuántos segundos el scheduler busca tareas vencidas |
+| `MAX_LATE_SECONDS` | `300` | Un evento vencido hace más de esto no se ejecuta (queda como `timeout`) |
+| `SCHEDULER_CRED_<REF>` | — | Secreto de la conexión REST cuyo `credentials_ref` es `<REF>` (ver [`scheduler/README.md`](./scheduler/README.md)) |
+
+El contenedor debe poder alcanzar la URL del SCADA (`base_url` de cada conexión REST). Si el SCADA
+corre en el host de Docker Desktop, se accede como `host.docker.internal`.
 
 Los datos (base SQLite y secreto JWT) viven en el volumen `/data`, así que sobreviven a reinicios y
 a reconstrucciones de la imagen. Para empezar de cero se elimina el volumen con
