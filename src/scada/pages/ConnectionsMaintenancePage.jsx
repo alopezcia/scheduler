@@ -7,6 +7,7 @@ const PROTOCOL_OPTIONS = [
     { value: 'opcua', label: 'OPC UA' },
     { value: 'mqtt', label: 'MQTT' },
     { value: 's7', label: 'S7' },
+    { value: 'rest', label: 'REST (sistema SCADA)' },
 ];
 
 const parseJson = ( text, fieldLabel ) => {
@@ -38,7 +39,7 @@ export const ConnectionsMaintenancePage = () => {
         { name: 'protocol', label: 'Protocolo', type: 'select', required: true, options: PROTOCOL_OPTIONS },
         {
             name: 'config', label: 'Config (JSON)', type: 'textarea', required: true, rows: 5,
-            helpText: 'opcua: { endpoint_url, security_policy, credentials_ref } · mqtt: { broker_url, base_topic, qos, tls } · s7: { ip, rack, slot }',
+            helpText: 'opcua: { endpoint_url, security_policy, credentials_ref } · mqtt: { broker_url, base_topic, qos, tls } · s7: { ip, rack, slot } · rest: { scada_vendor (ignition|wincc|aveva|other), base_url, auth_type, credentials_ref, timeout_ms }',
         },
     ];
 

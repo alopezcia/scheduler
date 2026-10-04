@@ -63,7 +63,7 @@ export const TagsMaintenancePage = () => {
         { name: 'unit', label: 'Unidad', type: 'text', placeholder: 'kW, °C, bar…' },
         {
             name: 'address', label: 'Address (JSON)', type: 'textarea', required: true, rows: 3,
-            helpText: 'opcua: { node_id } · mqtt: { topic, json_pointer } · s7: { db_number, offset, bit, s7_type }',
+            helpText: 'opcua: { node_id } · mqtt: { topic, json_pointer } · s7: { db_number, offset, bit, s7_type } · rest: { method, path, json_pointer }',
         },
         { name: 'read_write', label: 'Acceso', type: 'select', required: true, options: READ_WRITE_OPTIONS },
         { name: 'min_value', label: 'Valor mínimo', type: 'number' },
