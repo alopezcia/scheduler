@@ -3,7 +3,7 @@
 API REST en Rust (axum + sqlx/SQLite) para el frontend React de `react-mern-calendar-fin-seccion-29`.
 Implementa login/registro con JWT, el CRUD de eventos de calendario que consume `src/api/calendarApi.js`
 en el frontend, y un modelo SCADA (sites, assets, connections, tags, schedules) para supervisar y
-programar comandos sobre PLCs/gateways vía OPC UA, MQTT o S7.
+programar comandos sobre PLCs/gateways vía OPC UA, MQTT o S7 y, a nivel de sistema SCADA (Ignition, WinCC, AVEVA…), vía su API REST.
 
 ## Stack
 
@@ -107,7 +107,7 @@ eventos que no son del usuario actual.
 
 Jerarquía: un **site** (planta) contiene **assets** (planta → área → equipo → PLC, vía
 `parent_asset_id` autorreferente); un asset expone una o más **connections** (un PLC/gateway
-accesible por OPC UA, MQTT o S7); cada connection expone **tags** (los puntos SCADA: telemandos,
+accesible por OPC UA, MQTT o S7, o un sistema SCADA accesible por su API REST); cada connection expone **tags** (los puntos SCADA: telemandos,
 consignas o medidas); y un tag puede tener **schedules** que escriben un valor objetivo sobre él de
 forma puntual (`once`) o recurrente (`cron`). Un schedule no referencia un evento del calendario:
 es al revés, cada schedule genera sus propios eventos (ver `/api/events` más arriba).
@@ -136,11 +136,12 @@ Las respuestas de lista devuelven `{ ok, <entidad-en-plural>: [...] }`; crear/ac
 
 #### Connections
 
-`config` depende de `protocol` (`opcua` \| `mqtt` \| `s7`) y se valida en el servidor:
+`config` depende de `protocol` (`opcua` \| `mqtt` \| `s7` \| `rest`) y se valida en el servidor:
 
 - `opcua`: `{ endpoint_url, security_policy, credentials_ref }`
 - `mqtt`: `{ broker_url, base_topic, qos, tls }`
 - `s7`: `{ ip, rack, slot }`
+- `rest` (API REST de un sistema SCADA, nunca de un PLC): `{ scada_vendor, base_url, auth_type, credentials_ref, timeout_ms }` (`scada_vendor`: `ignition` \| `wincc` \| `aveva` \| `other`, validado en el servidor; `auth_type`: `none` \| `bearer` \| `basic` \| `api_key`; `credentials_ref` referencia el secreto, nunca lo guarda en claro)
 
 | Método | Ruta | Body / Query | Notas |
 | --- | --- | --- | --- |
@@ -156,6 +157,7 @@ Las respuestas de lista devuelven `{ ok, <entidad-en-plural>: [...] }`; crear/ac
 - `opcua`: `{ node_id }`
 - `mqtt`: `{ topic, json_pointer }`
 - `s7`: `{ db_number, offset, bit, s7_type }`
+- `rest`: `{ method, path, json_pointer }` — `path` es relativo a `base_url`; la lectura hace `GET path` y la escritura usa `method` (`PUT` \| `POST` \| `PATCH`) sobre `path`; `json_pointer` (RFC 6901) localiza el valor dentro del JSON de la respuesta/cuerpo.
 
 | Método | Ruta | Body / Query | Notas |
 | --- | --- | --- | --- |

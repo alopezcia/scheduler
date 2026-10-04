@@ -10,6 +10,10 @@ para administrar sites, assets, connections, tags y schedules.
 El backend que consume este frontend vive en [`backend/`](./backend) — una API REST en **Rust**
 (axum + SQLite). Ver [`backend/README.md`](./backend/README.md) para su documentación completa.
 
+Las tareas programadas las ejecuta [`scheduler/`](./scheduler), una app Rust independiente que lee
+del mismo SQLite los eventos vencidos y llama a la API REST del sistema SCADA. Ver
+[`scheduler/README.md`](./scheduler/README.md).
+
 ## Stack
 
 - **React 18** + **React Router 6**
