@@ -311,12 +311,24 @@ fn validate_connection_config(protocol: Protocol, config: &Value) -> Result<(), 
         Protocol::Opcua => &["endpoint_url", "security_policy", "credentials_ref"],
         Protocol::Mqtt => &["broker_url", "base_topic", "qos", "tls"],
         Protocol::S7 => &["ip", "rack", "slot"],
+        Protocol::Rest => &["scada_vendor", "base_url", "auth_type", "credentials_ref", "timeout_ms"],
     };
 
     for key in required {
         if !obj.contains_key(*key) {
             return Err(AppError::BadRequest(format!(
                 "config.{key} es obligatorio para el protocolo {protocol:?}"
+            )));
+        }
+    }
+
+    if protocol == Protocol::Rest {
+        const VENDORS: &[&str] = &["ignition", "wincc", "aveva", "other"];
+        let vendor = obj.get("scada_vendor").and_then(Value::as_str);
+        if !vendor.is_some_and(|v| VENDORS.contains(&v)) {
+            return Err(AppError::BadRequest(format!(
+                "config.scada_vendor debe ser uno de: {}",
+                VENDORS.join(", ")
             )));
         }
     }
@@ -476,6 +488,7 @@ fn validate_tag_address(protocol: Protocol, address: &Value) -> Result<(), AppEr
         Protocol::Opcua => &["node_id"],
         Protocol::Mqtt => &["topic", "json_pointer"],
         Protocol::S7 => &["db_number", "offset", "bit", "s7_type"],
+        Protocol::Rest => &["method", "path", "json_pointer"],
     };
 
     for key in required {
@@ -1006,6 +1019,27 @@ mod tests {
             "tls": false,
         });
         assert!(validate_connection_config(Protocol::Mqtt, &mqtt).is_ok());
+
+        let rest_incomplete = json!({ "base_url": "https://gw.local/api" });
+        assert!(validate_connection_config(Protocol::Rest, &rest_incomplete).is_err());
+
+        let rest = json!({
+            "scada_vendor": "ignition",
+            "base_url": "https://gw.local/api",
+            "auth_type": "bearer",
+            "credentials_ref": "cred-2",
+            "timeout_ms": 5000,
+        });
+        assert!(validate_connection_config(Protocol::Rest, &rest).is_ok());
+
+        let unknown_vendor = json!({
+            "scada_vendor": "plc-directo",
+            "base_url": "https://gw.local/api",
+            "auth_type": "none",
+            "credentials_ref": "",
+            "timeout_ms": 5000,
+        });
+        assert!(validate_connection_config(Protocol::Rest, &unknown_vendor).is_err());
     }
 
     #[test]
@@ -1015,6 +1049,12 @@ mod tests {
 
         let complete = json!({ "db_number": 1, "offset": 0, "bit": 3, "s7_type": "bool" });
         assert!(validate_tag_address(Protocol::S7, &complete).is_ok());
+
+        let rest_incomplete = json!({ "path": "/pumps/1" });
+        assert!(validate_tag_address(Protocol::Rest, &rest_incomplete).is_err());
+
+        let rest = json!({ "method": "PUT", "path": "/pumps/1/run", "json_pointer": "/value" });
+        assert!(validate_tag_address(Protocol::Rest, &rest).is_ok());
     }
 
     fn tag_payload(data_type: DataType, min: Option<f64>, max: Option<f64>) -> TagPayload {

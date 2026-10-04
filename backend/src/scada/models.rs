@@ -13,6 +13,7 @@ pub enum Protocol {
     Opcua,
     Mqtt,
     S7,
+    Rest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
@@ -185,6 +186,7 @@ impl From<ConnectionRow> for ConnectionResponse {
 /// - opcua: `{ "endpoint_url", "security_policy", "credentials_ref" }`
 /// - mqtt: `{ "broker_url", "base_topic", "qos", "tls" }`
 /// - s7: `{ "ip", "rack", "slot" }`
+/// - rest (API REST de un sistema SCADA, no de un PLC): `{ "scada_vendor", "base_url", "auth_type", "credentials_ref", "timeout_ms" }`
 #[derive(Debug, Deserialize)]
 pub struct ConnectionPayload {
     pub asset_id: String,
@@ -260,6 +262,7 @@ impl From<TagRow> for TagResponse {
 /// - opcua: `{ "node_id" }`
 /// - mqtt: `{ "topic", "json_pointer" }`
 /// - s7: `{ "db_number", "offset", "bit", "s7_type" }`
+/// - rest: `{ "method", "path", "json_pointer" }`
 #[derive(Debug, Deserialize)]
 pub struct TagPayload {
     pub connection_id: String,
