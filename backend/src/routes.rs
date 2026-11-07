@@ -6,6 +6,7 @@ use tower_http::cors::CorsLayer;
 use crate::auth;
 use crate::events;
 use crate::scada;
+use crate::scheduler_ws;
 use crate::state::AppState;
 
 fn cors_layer(allowed_origin: &str) -> CorsLayer {
@@ -27,6 +28,7 @@ fn cors_layer(allowed_origin: &str) -> CorsLayer {
 
 pub fn build_router(state: AppState) -> Router {
     let api_routes = Router::new()
+        .route("/scheduler/ws", get(scheduler_ws::upgrade))
         .route("/auth", post(auth::handlers::login))
         .route("/auth/new", post(auth::handlers::register))
         .route("/auth/renew", get(auth::handlers::renew))

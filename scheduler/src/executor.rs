@@ -7,21 +7,28 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
 use sqlx::SqlitePool;
 
+use crate::control::Control;
 use crate::db::{self, Outcome, Task};
 use crate::rest::{RestAddress, RestClient, RestConfig, RestError, values_match};
 
 const MAX_RESPONSE_LEN: usize = 4096;
 
-/// Busca las tareas vencidas y las ejecuta. Devuelve cuántas tareas procesó.
+/// Busca las tareas vencidas y las ejecuta. Devuelve cuántas tareas procesó. En pausa no
+/// recoge ninguna: los eventos quedan pendientes y, si al reanudar ya vencieron hace más de
+/// `max_late`, se registran como `timeout`.
 pub async fn run_due_tasks(
     pool: &SqlitePool,
     client: &RestClient,
+    control: &Control,
     now: DateTime<Utc>,
     max_late: Duration,
 ) -> Result<usize, sqlx::Error> {
     let mut processed = 0;
 
     for task in db::pending_tasks(pool).await? {
+        if control.is_paused() {
+            break;
+        }
         let start = match DateTime::parse_from_rfc3339(&task.start_date) {
             Ok(start) => start.with_timezone(&Utc),
             Err(e) => {
@@ -35,8 +42,9 @@ pub async fn run_due_tasks(
 
         if now - start > max_late {
             let msg = format!("Evento perdido: venció hace más de {} s y no se envió", max_late.num_seconds());
-            if db::claim(pool, &task, "timeout", Some(&msg)).await?.is_some() {
+            if let Some(execution_id) = db::claim(pool, &task, "timeout", Some(&msg)).await? {
                 tracing::warn!(event_id = %task.event_id, schedule = %task.schedule_name, "{msg}");
+                control.report(&execution_id, &task, "timeout", Some(&msg));
                 processed += 1;
             }
             continue;
@@ -47,8 +55,14 @@ pub async fn run_due_tasks(
         };
         processed += 1;
 
+        let cancelled = control.register(&execution_id, &task);
         let started = Instant::now();
-        let result = execute(client, &task).await;
+        let result = tokio::select! {
+            result = execute(client, &task) => result,
+            // Un `Err` aquí es que se soltó el emisor sin cancelar: no es una cancelación.
+            Ok(()) = cancelled => Err(Failure::Cancelled),
+        };
+        control.unregister(&execution_id);
         let latency_ms = Some(started.elapsed().as_millis() as i64);
 
         let failure_message = result.as_ref().err().map(Failure::message).unwrap_or_default();
@@ -71,11 +85,16 @@ pub async fn run_due_tasks(
             },
         };
         db::finish(pool, &execution_id, &outcome).await?;
+        control.report(&execution_id, &task, outcome.status, outcome.error_message);
 
         match &result {
             Ok(_) => tracing::info!(
                 event_id = %task.event_id, schedule = %task.schedule_name, tag = %task.tag_name,
                 status = outcome.status, "Comando ejecutado"
+            ),
+            Err(Failure::Cancelled) => tracing::warn!(
+                event_id = %task.event_id, schedule = %task.schedule_name, tag = %task.tag_name,
+                "Ejecución cancelada"
             ),
             Err(_) => tracing::error!(
                 event_id = %task.event_id, schedule = %task.schedule_name, tag = %task.tag_name,
@@ -99,12 +118,15 @@ enum Failure {
     Rest(RestError),
     /// El SCADA aceptó la escritura pero no se pudo confirmar el valor.
     NotAcked { response: String, message: String },
+    /// Cancelada desde el frontend mientras estaba en curso.
+    Cancelled,
 }
 
 impl Failure {
     fn status(&self) -> &'static str {
         match self {
             Failure::Rest(RestError::Timeout(_)) => "timeout",
+            Failure::Cancelled => "cancelled",
             _ => "failed",
         }
     }
@@ -125,6 +147,7 @@ impl Failure {
         match self {
             Failure::NotSent(msg) | Failure::NotAcked { message: msg, .. } => msg.clone(),
             Failure::Rest(RestError::Invalid(msg) | RestError::Timeout(msg) | RestError::Transport(msg)) => msg.clone(),
+            Failure::Cancelled => "Cancelada por el usuario: el SCADA pudo llegar a recibir el comando".to_string(),
             Failure::Rest(RestError::Status(code, _)) => format!("El SCADA rechazó el comando con HTTP {code} (ver response)"),
         }
     }

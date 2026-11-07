@@ -13,6 +13,7 @@ services:
       ALLOWED_ORIGIN: http://localhost:8080
       # Secretos de las conexiones REST (credentials_ref "ignition-prod" -> SCHEDULER_CRED_IGNITION_PROD)
       # SCHEDULER_CRED_IGNITION_PROD: token-o-usuario:clave
+      # SCHEDULER_SOCKET: /data/scheduler.sock   # socket Unix backend <-> scheduler
       # SCHEDULER_ENABLED: "false"   # desactiva el scheduler dentro del contenedor
       # POLL_INTERVAL_SECONDS: 5
       # MAX_LATE_SECONDS: 300

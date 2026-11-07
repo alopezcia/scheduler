@@ -7,6 +7,8 @@ pub struct AppConfig {
     pub jwt_expires_seconds: i64,
     pub port: u16,
     pub allowed_origin: String,
+    /// Socket Unix de la app `scheduler` (la misma variable que lee el scheduler).
+    pub scheduler_socket: String,
 }
 
 impl AppConfig {
@@ -26,6 +28,8 @@ impl AppConfig {
                 .unwrap_or(4000),
             allowed_origin: env::var("ALLOWED_ORIGIN")
                 .unwrap_or_else(|_| "http://localhost:5173".to_string()),
+            scheduler_socket: env::var("SCHEDULER_SOCKET")
+                .unwrap_or_else(|_| "/tmp/scheduler.sock".to_string()),
         }
     }
 }

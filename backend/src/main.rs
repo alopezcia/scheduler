@@ -4,6 +4,8 @@ mod error;
 mod events;
 mod routes;
 mod scada;
+mod scheduler_link;
+mod scheduler_ws;
 mod state;
 
 use std::str::FromStr;
@@ -50,11 +52,15 @@ async fn main() {
     // Guardamos una copia del allowed_origin antes de mover config a state
     let origin_str = config.allowed_origin.clone();
 
+    let scheduler = scheduler_link::SchedulerHub::new();
+    tokio::spawn(scheduler_link::connect_loop(config.scheduler_socket.clone(), scheduler.clone()));
+
     let state = AppState {
         pool,
         jwt_secret: config.jwt_secret,
         jwt_expires_seconds: config.jwt_expires_seconds,
         allowed_origin: config.allowed_origin,
+        scheduler,
     };
 
     // 2. Configuramos la capa (Layer) de CORS usando tu variable de entorno

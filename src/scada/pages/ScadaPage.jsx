@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Navbar } from '../../calendar';
 import { AssetsMaintenancePage } from './AssetsMaintenancePage';
 import { ConnectionsMaintenancePage } from './ConnectionsMaintenancePage';
+import { SchedulerPage } from './SchedulerPage';
 import { SchedulesMaintenancePage } from './SchedulesMaintenancePage';
 import { SitesMaintenancePage } from './SitesMaintenancePage';
 import { TagsMaintenancePage } from './TagsMaintenancePage';
@@ -13,6 +14,7 @@ const TABS = [
     { key: 'connections', label: 'Connections', Component: ConnectionsMaintenancePage },
     { key: 'tags', label: 'Tags', Component: TagsMaintenancePage },
     { key: 'schedules', label: 'Schedules', Component: SchedulesMaintenancePage },
+    { key: 'scheduler', label: 'Scheduler', Component: SchedulerPage },
 ];
 
 export const ScadaPage = () => {

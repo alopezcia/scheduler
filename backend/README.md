@@ -32,6 +32,7 @@ Variables de entorno (`.env`):
 | `JWT_EXPIRES_SECONDS` | Vigencia del token en segundos. | `86400` (24h) |
 | `PORT` | Puerto HTTP. | `4000` |
 | `ALLOWED_ORIGIN` | Origen permitido por CORS (el del frontend en dev). | `http://localhost:5173` |
+| `SCHEDULER_SOCKET` | Socket Unix de la app `scheduler`, al que el backend se conecta (reintenta si no está). Solo Linux/macOS. | `/tmp/scheduler.sock` |
 
 El frontend ya apunta a `http://localhost:4000/api` en `.env.template`/`.env.test`, así que con los
 valores por defecto no hace falta tocar nada del lado de React.
@@ -182,10 +183,35 @@ Generaliza el calendario: en vez de solo título/notas, una programación apunta
 migración (`src/scada/models.rs`, `migrations/0002_scada_model.sql`) pero todavía no tienen CRUD
 expuesto en la API.
 
+## Control del scheduler (WebSocket)
+
+El frontend controla la app [`scheduler`](../scheduler/README.md) siempre a través del backend:
+**navegador ⇄ (WebSocket) ⇄ backend ⇄ (socket Unix) ⇄ scheduler**, los dos tramos en ambos sentidos.
+El backend mantiene la conexión con el socket del scheduler (`src/scheduler_link.rs`) y reconecta solo
+si cae; `src/scheduler_ws.rs` atiende a los navegadores. Si el scheduler no está conectado, los
+clientes lo ven (`link: false`) y las órdenes se rechazan.
+
+`GET /api/scheduler/ws` (WebSocket, mensajes JSON de texto):
+
+1. El cliente envía primero `{ "type": "auth", "token": "<jwt>" }` (5 s de plazo). Un navegador no
+   puede poner cabeceras en un WebSocket y así el token no queda en la URL ni en los logs. Si el
+   token no es válido, el servidor cierra con el código `4401`.
+2. El servidor responde `{ "type": "auth", "ok": true }` y envía el estado actual.
+3. Notificaciones del servidor (a todos los clientes): `{ "type": "link", "connected" }` (¿está
+   conectado el scheduler?), `{ "type": "status", "paused", "running": [...] }` y
+   `{ "type": "execution", "execution_id", "schedule_name", "tag_name", "status", "message" }`
+   (`started`, `ack`, `sent`, `failed`, `timeout`, `cancelled`).
+4. Órdenes del cliente: `{ "id"?, "cmd": "get_status" | "pause" | "resume" | "cancel",
+   "execution_id"? }` (`execution_id` solo en `cancel`). Cualquier otra orden se rechaza. Respuesta:
+   `{ "type": "reply", "id", "ok", "error" }`.
+
+No hay roles en el sistema: cualquier usuario autenticado puede pausar o cancelar. Cada orden queda
+en el log con el nombre del usuario.
+
 ## Base de datos
 
 SQLite (ver `migrations/0001_init.sql`, `migrations/0002_scada_model.sql` y
-`migrations/0003_events_from_schedules.sql`):
+`migrations/0003_events_from_schedules.sql`; la `0006` añade el estado `cancelled` a `command_executions`):
 
 - `users (id, name, email UNIQUE, password_hash, created_at)`
 - `events (id, schedule_id -> schedules.id, start_date, user_id -> users.id, created_at)`

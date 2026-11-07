@@ -38,6 +38,7 @@ ENV DATABASE_URL=sqlite:///data/calendar.db \
     PORT=4000 \
     JWT_EXPIRES_SECONDS=86400 \
     ALLOWED_ORIGIN=http://localhost:8080 \
+    SCHEDULER_SOCKET=/data/scheduler.sock \
     SCHEDULER_ENABLED=true \
     POLL_INTERVAL_SECONDS=5 \
     MAX_LATE_SECONDS=300

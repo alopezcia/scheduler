@@ -101,6 +101,13 @@ del mismo SQLite los eventos vencidos y llama a la API REST del sistema SCADA. V
   generan automáticamente sus events en el calendario — uno solo si el disparador es `once` (en su
   `start_date`), o varias ocurrencias si es `cron` (usando `cron-parser` sobre su `cron_expr` para
   calcular N fechas, con `POST /events` por cada una).
+- **`store/scheduler` + `hooks/useSchedulerStore` + `api/schedulerSocket`**: control del scheduler
+  desde la pestaña **Scheduler** de `/scada` (`SchedulerPage`): ver si está conectado y en marcha,
+  **Iniciar**/**Pausar**, listar las ejecuciones en curso y **Cancelar** una, y un registro de la
+  actividad reciente. Toda la comunicación es por un WebSocket con el backend
+  (`/api/scheduler/ws`, autenticado con el JWT en el primer mensaje) que se abre al entrar en la
+  pestaña y se cierra al salir, con reconexión automática. El backend a su vez habla con el scheduler
+  por un socket Unix. Ver [`backend/README.md`](./backend/README.md#control-del-scheduler-websocket).
 - **`scada/`**: sección de mantenimiento (listar/crear/editar/borrar) para las entidades SCADA del
   backend — `sites`, `assets`, `connections`, `tags` y `schedules`. Se accede con el botón
   **Mantenimiento** del `Navbar` (ruta `/scada`), que alterna a **Calendario** para volver. `ScadaPage`
@@ -199,6 +206,7 @@ docker run -d --name scheduler -p 8080:80 -v scheduler-data:/data scheduler
 | `JWT_EXPIRES_SECONDS` | `86400` | Duración del token |
 | `ALLOWED_ORIGIN` | `http://localhost:8080` | Origen permitido por CORS (no afecta al acceso a través de nginx) |
 | `DATABASE_URL` | `sqlite:///data/calendar.db` | Ubicación de la base SQLite (la comparten backend y scheduler) |
+| `SCHEDULER_SOCKET` | `/data/scheduler.sock` | Socket Unix por el que el backend controla el scheduler |
 | `SCHEDULER_ENABLED` | `true` | Con `false` no se arranca el scheduler dentro del contenedor |
 | `POLL_INTERVAL_SECONDS` | `5` | Cada cuántos segundos el scheduler busca tareas vencidas |
 | `MAX_LATE_SECONDS` | `300` | Un evento vencido hace más de esto no se ejecuta (queda como `timeout`) |

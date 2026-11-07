@@ -8,11 +8,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use chrono::{Duration, SecondsFormat, Utc};
+use scheduler::control::{Control, serve_connection};
 use scheduler::executor::run_due_tasks;
 use scheduler::rest::RestClient;
 use serde_json::{Value, json};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row, SqlitePool};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Default)]
 struct Scada {
@@ -38,11 +40,19 @@ async fn broken(State(s): State<Arc<Scada>>) -> (StatusCode, &'static str) {
     (StatusCode::INTERNAL_SERVER_ERROR, "tag offline")
 }
 
+async fn slow(State(s): State<Arc<Scada>>) -> StatusCode {
+    s.writes.lock().unwrap().push("slow".to_string());
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    StatusCode::OK
+}
+
 async fn start_scada() -> (String, Arc<Scada>) {
     let state = Arc::new(Scada::default());
     let app = Router::new()
         .route("/api/tags/pump1", put(write_pump).get(read_pump))
         .route("/api/tags/broken", put(broken))
+        .route("/api/tags/slow", put(slow))
+        .route("/api/tags/open", put(|| async { StatusCode::OK }))
         .route("/api/tags/guarded", get(read_pump).put(broken))
         .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -147,7 +157,7 @@ async fn executes_due_rest_tasks_once_and_audits_each_outcome() {
 
     let client = RestClient::new();
     let max_late = Duration::seconds(300);
-    let processed = run_due_tasks(&pool, &client, Utc::now(), max_late).await.unwrap();
+    let processed = run_due_tasks(&pool, &client, &Control::new(), Utc::now(), max_late).await.unwrap();
     assert_eq!(processed, 5);
 
     let (status, _, response, sent) = execution(&pool, "ev-ok").await.unwrap();
@@ -179,7 +189,7 @@ async fn executes_due_rest_tasks_once_and_audits_each_outcome() {
     assert_eq!(*scada.writes.lock().unwrap(), vec!["pump1".to_string(), "broken".to_string()]);
 
     // Idempotencia: una segunda pasada no repite nada.
-    assert_eq!(run_due_tasks(&pool, &client, Utc::now(), max_late).await.unwrap(), 0);
+    assert_eq!(run_due_tasks(&pool, &client, &Control::new(), Utc::now(), max_late).await.unwrap(), 0);
     assert_eq!(scada.writes.lock().unwrap().len(), 2);
 }
 
@@ -202,10 +212,106 @@ async fn fails_when_the_credentials_secret_is_missing() {
     add_tag(&pool, "pump1", "rest", "/tags/pump1", (0, 0)).await;
     add_event(&pool, "ev", "pump1", "1", 0, &at(Duration::seconds(-5))).await;
 
-    run_due_tasks(&pool, &RestClient::new(), Utc::now(), Duration::seconds(300)).await.unwrap();
+    run_due_tasks(&pool, &RestClient::new(), &Control::new(), Utc::now(), Duration::seconds(300)).await.unwrap();
 
     let (status, err, _, sent) = execution(&pool, "ev").await.unwrap();
     assert_eq!((status.as_str(), sent), ("failed", false));
     assert!(err.unwrap().contains("SCHEDULER_CRED_NO_DEFINIDA"));
     assert!(scada.writes.lock().unwrap().is_empty());
+}
+
+async fn next_msg<R: tokio::io::AsyncBufRead + Unpin>(lines: &mut tokio::io::Lines<R>) -> Value {
+    serde_json::from_str(&lines.next_line().await.unwrap().expect("conexión cerrada")).unwrap()
+}
+
+/// Base con una conexión REST (sin auth) y un tag por cada ruta de `tags`.
+async fn rest_db(base_url: &str, tags: &[&str]) -> SqlitePool {
+    let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+    sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
+    sqlx::migrate!("../backend/migrations").run(&pool).await.unwrap();
+    exec(&pool, "INSERT INTO users (id, name, email, password_hash) VALUES ('u', 'n', 'e', 'h')", &[]).await;
+    exec(&pool, "INSERT INTO sites (id, name) VALUES ('s', 'S')", &[]).await;
+    exec(&pool, "INSERT INTO assets (id, site_id, name, kind) VALUES ('a', 's', 'A', 'plc')", &[]).await;
+    let cfg = json!({ "scada_vendor": "ignition", "base_url": base_url, "auth_type": "none", "timeout_ms": 60000 }).to_string();
+    exec(&pool, "INSERT INTO connections (id, asset_id, name, protocol, config) VALUES ('rest', 'a', 'R', 'rest', ?)", &[&cfg]).await;
+    for tag in tags {
+        add_tag(&pool, tag, "rest", &format!("/tags/{tag}"), (0, 0)).await;
+    }
+    pool
+}
+
+#[tokio::test]
+async fn paused_scheduler_picks_up_nothing_until_resumed() {
+    let (base_url, scada) = start_scada().await;
+    let pool = rest_db(&base_url, &["open"]).await;
+    add_event(&pool, "ev", "open", "1", 0, &at(Duration::seconds(-5))).await;
+
+    let control = Control::new();
+    control.set_paused(true);
+    let client = RestClient::new();
+    let max_late = Duration::seconds(300);
+
+    assert_eq!(run_due_tasks(&pool, &client, &control, Utc::now(), max_late).await.unwrap(), 0);
+    assert!(execution(&pool, "ev").await.is_none());
+    assert!(scada.writes.lock().unwrap().is_empty());
+
+    control.set_paused(false);
+    assert_eq!(run_due_tasks(&pool, &client, &control, Utc::now(), max_late).await.unwrap(), 1);
+    assert_eq!(execution(&pool, "ev").await.unwrap().0, "sent");
+}
+
+#[tokio::test]
+async fn control_connection_reports_status_and_cancels_a_running_execution() {
+    let (base_url, scada) = start_scada().await;
+    let pool = rest_db(&base_url, &["slow"]).await;
+    add_event(&pool, "ev", "slow", "1", 0, &at(Duration::seconds(-5))).await;
+
+    let control = Arc::new(Control::new());
+    let (backend_side, scheduler_side) = tokio::io::duplex(8192);
+    let served = control.clone();
+    tokio::spawn(async move { serve_connection(scheduler_side, &served).await });
+    let (reader, mut writer) = tokio::io::split(backend_side);
+    let mut lines = BufReader::new(reader).lines();
+
+    // Al conectar llega el estado inicial.
+    assert_eq!(next_msg(&mut lines).await, json!({ "type": "status", "paused": false, "running": [] }));
+
+    // La ejecución lenta arranca en segundo plano y se notifica.
+    let runner = {
+        let (pool, control) = (pool.clone(), control.clone());
+        tokio::spawn(async move {
+            run_due_tasks(&pool, &RestClient::new(), &control, Utc::now(), Duration::seconds(300)).await.unwrap()
+        })
+    };
+    let started = next_msg(&mut lines).await;
+    assert_eq!((started["type"].as_str(), started["status"].as_str()), (Some("execution"), Some("started")));
+    let execution_id = started["execution_id"].as_str().unwrap().to_string();
+    let status = next_msg(&mut lines).await;
+    assert_eq!(status["running"][0]["execution_id"], json!(execution_id));
+
+    // Cancelar una ejecución que no existe falla; la que corre se cancela.
+    let cancel = |id: &str| format!("{}
+", json!({ "id": "1", "cmd": "cancel", "execution_id": id }));
+    writer.write_all(cancel("nope").as_bytes()).await.unwrap();
+    let reply = next_msg(&mut lines).await;
+    assert_eq!((reply["type"].as_str(), reply["ok"].as_bool()), (Some("reply"), Some(false)));
+
+    writer.write_all(cancel(&execution_id).as_bytes()).await.unwrap();
+    assert_eq!(runner.await.unwrap(), 1);
+
+    let (status, err, _, sent) = execution(&pool, "ev").await.unwrap();
+    assert_eq!((status.as_str(), sent), ("cancelled", false));
+    assert!(err.unwrap().contains("Cancelada"));
+    assert_eq!(*scada.writes.lock().unwrap(), vec!["slow".to_string()]);
+
+    // Pausar desde el control se refleja en el estado difundido.
+    writer.write_all(b"{\"cmd\":\"pause\"}
+").await.unwrap();
+    loop {
+        let msg = next_msg(&mut lines).await;
+        if msg["type"] == "status" && msg["paused"] == true {
+            break;
+        }
+    }
+    assert!(control.is_paused());
 }
