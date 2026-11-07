@@ -43,7 +43,7 @@ ENV DATABASE_URL=sqlite:///data/calendar.db \
     POLL_INTERVAL_SECONDS=5 \
     MAX_LATE_SECONDS=300
 
-ARG VERSION=0.2.0
+ARG VERSION=0.3.0
 LABEL org.opencontainers.image.version="${VERSION}"
 
 VOLUME /data

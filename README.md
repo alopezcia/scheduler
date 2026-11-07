@@ -160,7 +160,7 @@ del mismo SQLite los eventos vencidos y llama a la API REST del sistema SCADA. V
 
 ## Docker
 
-El `Dockerfile` de la raíz genera **una única imagen** (versión `0.2.0`) con frontend, backend y
+El `Dockerfile` de la raíz genera **una única imagen** (versión `0.3.0`) con frontend, backend y
 [scheduler](./scheduler):
 
 - El frontend se compila con Vite (`VITE_API_URL=/api`) y lo sirve **nginx**, que además hace de proxy
@@ -201,7 +201,7 @@ docker compose up --build
 La aplicación queda en http://localhost:8080. También se puede usar Docker directamente:
 
 ```bash
-docker build -t scheduler:0.2.0 -t scheduler:latest .
+docker build -t scheduler:0.3.0 -t scheduler:latest .
 docker run -d --name scheduler -p 8080:80 -v scheduler-data:/data scheduler
 ```
 
