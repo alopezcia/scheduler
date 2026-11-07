@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
 
+import { useAuthStore } from './useAuthStore';
 import { connectSchedulerSocket, disconnectSchedulerSocket, sendSchedulerCommand } from '../api/schedulerSocket';
 
 
@@ -10,6 +11,7 @@ export const useSchedulerStore = ({ autoConnect = false } = {}) => {
 
     const dispatch = useDispatch();
     const { socket, linked, paused, running, log } = useSelector( state => state.scheduler );
+    const { isAdmin } = useAuthStore();
 
     useEffect(() => {
         if ( !autoConnect ) return;
@@ -27,8 +29,10 @@ export const useSchedulerStore = ({ autoConnect = false } = {}) => {
 
     return {
         //* Propiedades
-        // Se pueden mandar órdenes si hay WebSocket y el backend ve al scheduler
-        canControl: socket === 'open' && linked === true,
+        // Se pueden mandar órdenes si hay WebSocket, el backend ve al scheduler y el usuario es administrador
+        // (el backend lo vuelve a comprobar en cada orden)
+        canControl: isAdmin && socket === 'open' && linked === true,
+        isAdmin,
         linked,
         log,
         paused,

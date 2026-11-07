@@ -18,6 +18,7 @@ pub struct AuthResponse {
     pub ok: bool,
     pub uid: String,
     pub name: String,
+    pub role: &'static str,
     pub token: String,
 }
 
@@ -26,4 +27,5 @@ pub struct UserRow {
     pub id: String,
     pub name: String,
     pub password_hash: String,
+    pub role: String,
 }

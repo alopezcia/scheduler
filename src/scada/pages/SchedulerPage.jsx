@@ -26,7 +26,7 @@ const connectionBadge = ({ socket, linked }) => {
 
 export const SchedulerPage = () => {
 
-    const { canControl, linked, log, paused, running, socket, cancelExecution, pause, resume } = useSchedulerStore({ autoConnect: true });
+    const { canControl, isAdmin, linked, log, paused, running, socket, cancelExecution, pause, resume } = useSchedulerStore({ autoConnect: true });
 
     const badge = connectionBadge({ socket, linked });
 
@@ -35,7 +35,7 @@ export const SchedulerPage = () => {
             <div className="d-flex align-items-center gap-3 mb-4">
                 <span className={ `badge ${ badge.className }` }>{ badge.text }</span>
 
-                { canControl && (
+                { socket === 'open' && linked && (
                     <span className={ `badge ${ paused ? 'bg-warning text-dark' : 'bg-success' }` }>
                         { paused ? 'En pausa' : 'En marcha' }
                     </span>
@@ -61,7 +61,13 @@ export const SchedulerPage = () => {
                 </div>
             </div>
 
-            { paused && canControl && (
+            { !isAdmin && (
+                <div className="alert alert-info">
+                    Solo un administrador puede pausar, reanudar o cancelar ejecuciones. Tú puedes ver su estado.
+                </div>
+            )}
+
+            { paused && socket === 'open' && linked && (
                 <div className="alert alert-warning">
                     El scheduler no recoge tareas nuevas. Las ejecuciones en curso continúan; los eventos
                     que venzan durante la pausa y superen la tolerancia se registrarán como <code>timeout</code>.

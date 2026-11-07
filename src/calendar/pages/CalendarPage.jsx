@@ -11,7 +11,7 @@ import { useUiStore, useCalendarStore, useAuthStore } from '../../hooks';
 
 export const CalendarPage = () => {
 
-  const { user } = useAuthStore();
+  const { user, canPlan } = useAuthStore();
   const { openDateModal } = useUiStore();
   const { events, setActiveEvent, startLoadingEvents } = useCalendarStore();
 
@@ -34,7 +34,8 @@ export const CalendarPage = () => {
   }
 
   const onDoubleClick = ( event ) => {
-    // console.log({ doubleClick: event });
+    // Un consultor solo ve los eventos: no abre el formulario de edición
+    if ( !canPlan ) return;
     openDateModal();
   }
 
@@ -79,8 +80,8 @@ export const CalendarPage = () => {
 
       <CalendarModal />
 
-      <FabAddNew />
-      <FabDelete />
+      { canPlan && <FabAddNew /> }
+      { canPlan && <FabDelete /> }
 
 
     </>

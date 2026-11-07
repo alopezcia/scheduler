@@ -35,6 +35,8 @@ describe('Pruebas en useAuthStore', () => {
         });
 
         expect(result.current).toEqual({
+            canPlan: false,
+            isAdmin: false,
             errorMessage: undefined,
             status: 'checking',
             user: {},
@@ -198,4 +200,22 @@ describe('Pruebas en useAuthStore', () => {
 
 
     
+
+    test.each([
+        [ undefined, false, false ],
+        [ 'consultor', false, false ],
+        [ 'planificador', true, false ],
+        [ 'administrador', true, true ],
+    ])('el rol %s da canPlan=%s e isAdmin=%s', ( role, canPlan, isAdmin ) => {
+
+        const mockStore = getMockStore({ ...initialState, status: 'authenticated', user: { name: 'Test', uid: 'abc', role } });
+
+        const { result } = renderHook( () => useAuthStore(), {
+            wrapper: ({ children }) => <Provider store={ mockStore } >{ children }</Provider>
+        });
+
+        expect( result.current.canPlan ).toBe( canPlan );
+        expect( result.current.isAdmin ).toBe( isAdmin );
+    });
+
 });

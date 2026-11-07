@@ -5,6 +5,7 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 
 import { calendarApi } from '../../api';
 import { getEnvVariables } from '../../helpers';
+import { useAuthStore } from '../../hooks';
 
 const customStyles = {
     content: {
@@ -111,6 +112,7 @@ export const EntityMaintenance = ({
     rowKey = 'id',
 }) => {
 
+    const { canPlan } = useAuthStore();
     const [ items, setItems ] = useState([]);
     const [ isLoading, setIsLoading ] = useState(true);
     const [ isModalOpen, setIsModalOpen ] = useState(false);
@@ -215,10 +217,12 @@ export const EntityMaintenance = ({
         <div className="scada-maintenance">
             <div className="d-flex justify-content-between align-items-center mb-3">
                 <h3 className="m-0">{ title }</h3>
-                <button className="btn btn-primary" onClick={ openCreateModal }>
-                    <i className="fas fa-plus"></i>
-                    <span> Nuevo</span>
-                </button>
+                { canPlan && (
+                    <button className="btn btn-primary" onClick={ openCreateModal }>
+                        <i className="fas fa-plus"></i>
+                        <span> Nuevo</span>
+                    </button>
+                )}
             </div>
 
             { isLoading
@@ -248,6 +252,8 @@ export const EntityMaintenance = ({
                                             </td>
                                         ))}
                                         <td>
+                                            { canPlan && (
+                                                <>
                                             <button
                                                 className="btn btn-sm btn-outline-primary me-2"
                                                 onClick={ () => openEditModal( item ) }
@@ -260,6 +266,8 @@ export const EntityMaintenance = ({
                                             >
                                                 <i className="fas fa-trash-alt"></i>
                                             </button>
+                                                                                        </>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

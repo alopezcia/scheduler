@@ -5,7 +5,7 @@ use chrono::DateTime;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::{AuthUser, Planner};
 use crate::error::AppError;
 use crate::events::models::{EventPayload, EventResponse, EventRow};
 use crate::state::AppState;
@@ -74,7 +74,7 @@ pub async fn list_events(
 }
 
 pub async fn create_event(
-    auth: AuthUser,
+    auth: Planner,
     State(state): State<AppState>,
     Json(payload): Json<EventPayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -104,7 +104,7 @@ async fn find_owner(state: &AppState, id: &str) -> Result<String, AppError> {
 }
 
 pub async fn update_event(
-    auth: AuthUser,
+    auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<EventPayload>,
@@ -132,7 +132,7 @@ pub async fn update_event(
 }
 
 pub async fn delete_event(
-    auth: AuthUser,
+    auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {

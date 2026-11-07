@@ -14,7 +14,7 @@ export const useAuthStore = () => {
             const { data } = await calendarApi.post('/auth',{ email, password });
             localStorage.setItem('token', data.token );
             localStorage.setItem('token-init-date', new Date().getTime() );
-            dispatch( onLogin({ name: data.name, uid: data.uid }) );
+            dispatch( onLogin({ name: data.name, uid: data.uid, role: data.role }) );
             
         } catch (error) {
             dispatch( onLogout('Credenciales incorrectas') );
@@ -30,7 +30,7 @@ export const useAuthStore = () => {
             const { data } = await calendarApi.post('/auth/new',{ email, password, name });
             localStorage.setItem('token', data.token );
             localStorage.setItem('token-init-date', new Date().getTime() );
-            dispatch( onLogin({ name: data.name, uid: data.uid }) );
+            dispatch( onLogin({ name: data.name, uid: data.uid, role: data.role }) );
             
         } catch (error) {
             dispatch( onLogout( error.response.data?.msg || '--' ) );
@@ -49,7 +49,7 @@ export const useAuthStore = () => {
             const { data } = await calendarApi.get('auth/renew');
             localStorage.setItem('token', data.token );
             localStorage.setItem('token-init-date', new Date().getTime() );
-            dispatch( onLogin({ name: data.name, uid: data.uid }) );
+            dispatch( onLogin({ name: data.name, uid: data.uid, role: data.role }) );
         } catch (error) {
             localStorage.clear();
             dispatch( onLogout() );
@@ -64,9 +64,15 @@ export const useAuthStore = () => {
 
 
 
+    // Mismos niveles que el backend: cada rol incluye los del anterior.
+    const canPlan = user.role === 'planificador' || user.role === 'administrador';
+    const isAdmin = user.role === 'administrador';
+
     return {
         //* Propiedades
+        canPlan,
         errorMessage,
+        isAdmin,
         status, 
         user, 
 

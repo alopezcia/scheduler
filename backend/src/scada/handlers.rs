@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use sqlx::types::Json as SqlxJson;
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::{AuthUser, Planner};
 use crate::error::AppError;
 use crate::scada::models::{
     AssetPayload, AssetRow, ConnectionPayload, ConnectionResponse, ConnectionRow, DataType,
@@ -48,7 +48,7 @@ pub async fn list_sites(
 }
 
 pub async fn create_site(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Json(payload): Json<SitePayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -66,7 +66,7 @@ pub async fn create_site(
 }
 
 pub async fn update_site(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<SitePayload>,
@@ -88,7 +88,7 @@ pub async fn update_site(
 }
 
 pub async fn delete_site(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
@@ -224,7 +224,7 @@ pub async fn list_assets(
 }
 
 pub async fn create_asset(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Json(payload): Json<AssetPayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -251,7 +251,7 @@ pub async fn create_asset(
 }
 
 pub async fn update_asset(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<AssetPayload>,
@@ -279,7 +279,7 @@ pub async fn update_asset(
 }
 
 pub async fn delete_asset(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
@@ -402,7 +402,7 @@ pub async fn list_connections(
 }
 
 pub async fn create_connection(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Json(payload): Json<ConnectionPayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -427,7 +427,7 @@ pub async fn create_connection(
 }
 
 pub async fn update_connection(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<ConnectionPayload>,
@@ -455,7 +455,7 @@ pub async fn update_connection(
 }
 
 pub async fn delete_connection(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
@@ -635,7 +635,7 @@ pub async fn list_tags(
 }
 
 pub async fn create_tag(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Json(payload): Json<TagPayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -675,7 +675,7 @@ pub async fn create_tag(
 }
 
 pub async fn update_tag(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<TagPayload>,
@@ -726,7 +726,7 @@ pub async fn update_tag(
 }
 
 pub async fn delete_tag(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
@@ -883,7 +883,7 @@ pub async fn list_schedules(
 }
 
 pub async fn create_schedule(
-    auth: AuthUser,
+    auth: Planner,
     State(state): State<AppState>,
     Json(payload): Json<SchedulePayload>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -921,7 +921,7 @@ pub async fn create_schedule(
 }
 
 pub async fn update_schedule(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(payload): Json<SchedulePayload>,
@@ -959,7 +959,7 @@ pub async fn update_schedule(
 }
 
 pub async fn delete_schedule(
-    _auth: AuthUser,
+    _auth: Planner,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {

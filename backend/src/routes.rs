@@ -88,3 +88,87 @@ pub fn build_router(state: AppState) -> Router {
         .layer(cors)
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use serde_json::{Value, json};
+    use sqlx::sqlite::SqlitePoolOptions;
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::scheduler_link::SchedulerHub;
+
+    async fn app() -> (Router, sqlx::SqlitePool) {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let state = AppState {
+            pool: pool.clone(),
+            jwt_secret: "secreto".to_string(),
+            jwt_expires_seconds: 3600,
+            allowed_origin: "http://localhost".to_string(),
+            scheduler: SchedulerHub::new(),
+        };
+        (build_router(state), pool)
+    }
+
+    async fn call(app: &Router, method: &str, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
+        let mut request = Request::builder().method(method).uri(uri).header("content-type", "application/json");
+        if let Some(token) = token {
+            request = request.header("x-token", token);
+        }
+        let response = app.clone().oneshot(request.body(Body::from(body.to_string())).unwrap()).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    async fn register(app: &Router, email: &str) -> Value {
+        let body = json!({ "name": email, "email": email, "password": "secreto1" });
+        call(app, "POST", "/api/auth/new", None, body).await.1
+    }
+
+    fn event() -> Value {
+        json!({ "schedule_id": "no-existe", "start": "2030-01-01T10:00:00Z" })
+    }
+
+    #[tokio::test]
+    async fn the_first_user_is_admin_and_the_rest_start_as_consultants() {
+        let (app, _) = app().await;
+        assert_eq!(register(&app, "a@x.com").await["role"], "administrador");
+        assert_eq!(register(&app, "b@x.com").await["role"], "consultor");
+    }
+
+    #[tokio::test]
+    async fn roles_gate_writes_but_not_reads() {
+        let (app, pool) = app().await;
+        register(&app, "admin@x.com").await;
+        let consultant = register(&app, "c@x.com").await;
+        let token = consultant["token"].as_str().unwrap();
+
+        // Consultor: lee, pero no escribe.
+        assert_eq!(call(&app, "GET", "/api/events", Some(token), Value::Null).await.0, StatusCode::OK);
+        assert_eq!(call(&app, "GET", "/api/tags", Some(token), Value::Null).await.0, StatusCode::OK);
+        assert_eq!(call(&app, "POST", "/api/events", Some(token), event()).await.0, StatusCode::FORBIDDEN);
+        assert_eq!(call(&app, "DELETE", "/api/events/x", Some(token), Value::Null).await.0, StatusCode::FORBIDDEN);
+        assert_eq!(call(&app, "POST", "/api/sites", Some(token), json!({ "name": "s" })).await.0, StatusCode::FORBIDDEN);
+
+        // Al subirle el rol, el mismo token vale: el rol se lee de la base de datos.
+        sqlx::query("UPDATE users SET role = 'planificador' WHERE email = 'c@x.com'").execute(&pool).await.unwrap();
+        // El cuerpo apunta a un schedule inexistente: lo que importa es que ya no sea 403.
+        assert_ne!(call(&app, "POST", "/api/events", Some(token), event()).await.0, StatusCode::FORBIDDEN);
+
+        // Sin token, 401.
+        assert_eq!(call(&app, "GET", "/api/events", None, Value::Null).await.0, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn a_token_of_a_deleted_user_is_rejected() {
+        let (app, pool) = app().await;
+        let user = register(&app, "a@x.com").await;
+        sqlx::query("DELETE FROM users").execute(&pool).await.unwrap();
+        let (status, _) = call(&app, "GET", "/api/events", user["token"].as_str(), Value::Null).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+}

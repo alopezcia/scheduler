@@ -64,9 +64,9 @@ Todas las rutas cuelgan de `/api`. Las respuestas de error siempre tienen la for
 
 | Método | Ruta | Body | Respuesta OK |
 | --- | --- | --- | --- |
-| POST | `/api/auth` | `{ email, password }` | `{ ok, uid, name, token }` |
-| POST | `/api/auth/new` | `{ name, email, password }` | `{ ok, uid, name, token }` |
-| GET | `/api/auth/renew` | — (requiere `x-token`) | `{ ok, uid, name, token }` |
+| POST | `/api/auth` | `{ email, password }` | `{ ok, uid, name, role, token }` |
+| POST | `/api/auth/new` | `{ name, email, password }` | `{ ok, uid, name, role, token }` |
+| GET | `/api/auth/renew` | — (requiere `x-token`) | `{ ok, uid, name, role, token }` |
 
 El JWT se envía y se valida en el header **`x-token`** (no `Authorization: Bearer`), igual que
 `calendarApi.js` en el frontend.
@@ -183,6 +183,22 @@ Generaliza el calendario: en vez de solo título/notas, una programación apunta
 migración (`src/scada/models.rs`, `migrations/0002_scada_model.sql`) pero todavía no tienen CRUD
 expuesto en la API.
 
+
+### Roles
+
+| Rol | Puede |
+|---|---|
+| `consultor` | Ver todo lo registrado (todos los `GET`) |
+| `planificador` | Además crear, modificar y borrar eventos y la configuración (sites, assets, connections, tags, schedules) |
+| `administrador` | Además pausar/reanudar el scheduler y cancelar ejecuciones (WebSocket `/api/scheduler/ws`) |
+
+Cada rol incluye los del anterior. El rol se guarda en `users.role` y se lee de la base de datos en
+cada petición (no va en el JWT), así que un cambio surte efecto de inmediato; sin permiso el
+backend responde `403`. El primer usuario que se registra es administrador; los siguientes entran
+como consultor y los usuarios previos a la migración 0007 pasan a administrador. De momento
+no hay endpoint para cambiar roles: se hace en la base de datos
+(`UPDATE users SET role = 'planificador' WHERE email = '...'`).
+
 ## Control del scheduler (WebSocket)
 
 El frontend controla la app [`scheduler`](../scheduler/README.md) siempre a través del backend:
@@ -196,7 +212,7 @@ clientes lo ven (`link: false`) y las órdenes se rechazan.
 1. El cliente envía primero `{ "type": "auth", "token": "<jwt>" }` (5 s de plazo). Un navegador no
    puede poner cabeceras en un WebSocket y así el token no queda en la URL ni en los logs. Si el
    token no es válido, el servidor cierra con el código `4401`.
-2. El servidor responde `{ "type": "auth", "ok": true }` y envía el estado actual.
+2. El servidor responde `{ "type": "auth", "ok": true, "role" }` y envía el estado actual.
 3. Notificaciones del servidor (a todos los clientes): `{ "type": "link", "connected" }` (¿está
    conectado el scheduler?), `{ "type": "status", "paused", "running": [...] }` y
    `{ "type": "execution", "execution_id", "schedule_name", "tag_name", "status", "message" }`

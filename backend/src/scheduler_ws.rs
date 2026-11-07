@@ -5,10 +5,12 @@
 //! Protocolo (JSON de texto):
 //!   1. El cliente envía primero `{ "type": "auth", "token": "<jwt>" }` (un navegador no puede
 //!      poner cabeceras en un WebSocket, y así el token no acaba en la URL ni en los logs).
+//!      El usuario debe existir; su rol llega en la respuesta `{ "type": "auth", "ok": true, "role" }`.
 //!   2. El servidor emite `{ "type": "link", "connected": bool }` (¿está el scheduler
 //!      conectado?), `status`, `execution` y `reply`, tal y como los define el scheduler.
 //!   3. El cliente envía `{ "id"?, "cmd": "get_status" | "pause" | "resume" | "cancel",
 //!      "execution_id"? }` y recibe `{ "type": "reply", "id", "ok", "error" }`.
+//!      `pause`, `resume` y `cancel` solo las acepta un administrador; `get_status` cualquiera.
 
 use std::time::Duration;
 
@@ -19,7 +21,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
 
+use crate::auth::role::Role;
 use crate::auth::jwt::verify_token;
+use crate::auth::role::role_of;
 use crate::state::AppState;
 
 const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -54,14 +58,17 @@ pub async fn upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> Res
     ws.on_upgrade(move |socket| client_session(socket, state))
 }
 
-async fn authenticate(socket: &mut WebSocket, state: &AppState) -> Option<String> {
+/// Devuelve `(uid, nombre)` del usuario si el token es válido y el usuario sigue existiendo.
+async fn authenticate(socket: &mut WebSocket, state: &AppState) -> Option<(String, String)> {
     let first = tokio::time::timeout(AUTH_TIMEOUT, socket.recv()).await.ok()??.ok()?;
     let Message::Text(text) = first else { return None };
     let auth: AuthMessage = serde_json::from_str(&text).ok()?;
     if auth.kind != "auth" {
         return None;
     }
-    verify_token(&auth.token, &state.jwt_secret).ok().map(|claims| claims.name)
+    let claims = verify_token(&auth.token, &state.jwt_secret).ok()?;
+    role_of(&state.pool, &claims.uid).await.ok()??;
+    Some((claims.uid, claims.name))
 }
 
 async fn send(socket: &mut WebSocket, value: &Value) -> bool {
@@ -69,7 +76,7 @@ async fn send(socket: &mut WebSocket, value: &Value) -> bool {
 }
 
 async fn client_session(mut socket: WebSocket, state: AppState) {
-    let Some(user) = authenticate(&mut socket, &state).await else {
+    let Some((uid, user)) = authenticate(&mut socket, &state).await else {
         let _ = socket
             .send(Message::Close(Some(CloseFrame {
                 code: CLOSE_UNAUTHORIZED,
@@ -82,7 +89,8 @@ async fn client_session(mut socket: WebSocket, state: AppState) {
 
     let hub = &state.scheduler;
     let (initial, mut events) = hub.subscribe();
-    if !send(&mut socket, &json!({ "type": "auth", "ok": true })).await {
+    let role = role_of(&state.pool, &uid).await.ok().flatten().unwrap_or(Role::Consultor);
+    if !send(&mut socket, &json!({ "type": "auth", "ok": true, "role": role.as_str() })).await {
         return;
     }
     for message in initial {
@@ -101,7 +109,7 @@ async fn client_session(mut socket: WebSocket, state: AppState) {
                     Some(Ok(_)) => continue,
                 };
                 let reply = match serde_json::from_str::<ClientRequest>(&text) {
-                    Ok(request) => handle_request(&state, &user, request, &mut socket).await,
+                    Ok(request) => handle_request(&state, &uid, &user, request, &mut socket).await,
                     Err(e) => Some(json!({ "type": "reply", "id": null, "ok": false, "error": format!("Petición inválida: {e}") })),
                 };
                 if let Some(reply) = reply && !send(&mut socket, &reply).await {
@@ -126,7 +134,7 @@ async fn client_session(mut socket: WebSocket, state: AppState) {
 }
 
 /// Ejecuta la orden y devuelve la respuesta para el cliente (si procede).
-async fn handle_request(state: &AppState, user: &str, request: ClientRequest, socket: &mut WebSocket) -> Option<Value> {
+async fn handle_request(state: &AppState, uid: &str, user: &str, request: ClientRequest, socket: &mut WebSocket) -> Option<Value> {
     let (log, to_scheduler) = match request.command {
         ClientCommand::GetStatus => {
             for message in state.scheduler.current() {
@@ -143,6 +151,13 @@ async fn handle_request(state: &AppState, user: &str, request: ClientRequest, so
             json!({ "cmd": "cancel", "execution_id": execution_id }),
         ),
     };
+
+    // Pausar, reanudar y cancelar exigen administrador. El rol se lee en cada orden, no solo
+    // al conectar, para que quitárselo a alguien surta efecto con el WebSocket ya abierto.
+    if role_of(&state.pool, uid).await.ok().flatten() < Some(Role::Administrador) {
+        tracing::warn!(%user, "Orden al scheduler denegada por falta de permisos: {log}");
+        return Some(json!({ "type": "reply", "id": request.id, "ok": false, "error": "Solo un administrador puede controlar el scheduler" }));
+    }
 
     tracing::info!(%user, "Orden al scheduler: {log}");
     let (ok, error) = match state.scheduler.request(to_scheduler).await {

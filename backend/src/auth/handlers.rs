@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::auth::jwt::generate_token;
+use crate::auth::role::Role;
 use crate::auth::models::{AuthResponse, LoginPayload, RegisterPayload, UserRow};
 use crate::error::AppError;
 use crate::state::AppState;
@@ -17,7 +18,7 @@ pub async fn login(
     let email = payload.email.trim().to_lowercase();
 
     let user = sqlx::query_as::<_, UserRow>(
-        "SELECT id, name, password_hash FROM users WHERE email = ?",
+        "SELECT id, name, password_hash, role FROM users WHERE email = ?",
     )
     .bind(&email)
     .fetch_optional(&state.pool)
@@ -45,6 +46,7 @@ pub async fn login(
         ok: true,
         uid: user.id,
         name: user.name,
+        role: Role::parse(&user.role).unwrap_or(Role::Consultor).as_str(),
         token,
     }))
 }
@@ -75,13 +77,19 @@ pub async fn register(
         .map_err(|err| AppError::Internal(err.to_string()))?;
     let id = Uuid::new_v4().to_string();
 
-    sqlx::query("INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)")
-        .bind(&id)
-        .bind(&name)
-        .bind(&email)
-        .bind(&password_hash)
-        .execute(&state.pool)
-        .await?;
+    // El primer usuario de todos es administrador (si no, nadie podría dar de alta al resto);
+    // los demás entran como consultor y un administrador les sube el rol.
+    let role: String = sqlx::query_scalar(
+        "INSERT INTO users (id, name, email, password_hash, role)
+         VALUES (?, ?, ?, ?, CASE WHEN (SELECT COUNT(*) FROM users) = 0 THEN 'administrador' ELSE 'consultor' END)
+         RETURNING role",
+    )
+    .bind(&id)
+    .bind(&name)
+    .bind(&email)
+    .bind(&password_hash)
+    .fetch_one(&state.pool)
+    .await?;
 
     let token = generate_token(&id, &name, &state.jwt_secret, state.jwt_expires_seconds)
         .map_err(|err| AppError::Internal(err.to_string()))?;
@@ -90,6 +98,7 @@ pub async fn register(
         ok: true,
         uid: id,
         name,
+        role: Role::parse(&role).unwrap_or(Role::Consultor).as_str(),
         token,
     }))
 }
@@ -110,6 +119,7 @@ pub async fn renew(
         ok: true,
         uid: auth.uid,
         name: auth.name,
+        role: auth.role.as_str(),
         token,
     }))
 }
