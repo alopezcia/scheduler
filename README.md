@@ -108,6 +108,8 @@ del mismo SQLite los eventos vencidos y llama a la API REST del sistema SCADA. V
   (`/api/scheduler/ws`, autenticado con el JWT en el primer mensaje) que se abre al entrar en la
   pestaña y se cierra al salir, con reconexión automática. El backend a su vez habla con el scheduler
   por un socket Unix. Ver [`backend/README.md`](./backend/README.md#control-del-scheduler-websocket).
+  La pestaña **Usuarios** (`UsersPage`, solo visible para administradores) lista los usuarios y
+  permite cambiar su rol (`consultor`, `planificador`, `administrador`; ver los roles en el README del backend).
 - **`scada/`**: sección de mantenimiento (listar/crear/editar/borrar) para las entidades SCADA del
   backend — `sites`, `assets`, `connections`, `tags` y `schedules`. Se accede con el botón
   **Mantenimiento** del `Navbar` (ruta `/scada`), que alterna a **Calendario** para volver. `ScadaPage`
