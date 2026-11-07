@@ -4,4 +4,4 @@ pub mod jwt;
 pub mod models;
 pub mod role;
 
-pub use extractor::{AuthUser, Planner};
+pub use extractor::{Admin, AuthUser, Planner};

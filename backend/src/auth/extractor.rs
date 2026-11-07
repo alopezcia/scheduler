@@ -49,6 +49,8 @@ pub struct AtLeast<const MIN: u8>(pub AuthUser);
 
 /// Puede modificar eventos y configuración.
 pub type Planner = AtLeast<{ Role::Planificador as u8 }>;
+/// Puede además controlar el scheduler y gestionar usuarios.
+pub type Admin = AtLeast<{ Role::Administrador as u8 }>;
 
 impl<const MIN: u8> std::ops::Deref for AtLeast<MIN> {
     type Target = AuthUser;

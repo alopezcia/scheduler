@@ -8,6 +8,7 @@ use crate::events;
 use crate::scada;
 use crate::scheduler_ws;
 use crate::state::AppState;
+use crate::users;
 
 fn cors_layer(allowed_origin: &str) -> CorsLayer {
     let origin: HeaderValue = allowed_origin
@@ -29,6 +30,8 @@ fn cors_layer(allowed_origin: &str) -> CorsLayer {
 pub fn build_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/scheduler/ws", get(scheduler_ws::upgrade))
+        .route("/users", get(users::list_users))
+        .route("/users/{id}/role", put(users::update_role))
         .route("/auth", post(auth::handlers::login))
         .route("/auth/new", post(auth::handlers::register))
         .route("/auth/renew", get(auth::handlers::renew))
@@ -170,5 +173,35 @@ mod tests {
         sqlx::query("DELETE FROM users").execute(&pool).await.unwrap();
         let (status, _) = call(&app, "GET", "/api/events", user["token"].as_str(), Value::Null).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn only_admins_manage_roles_and_the_last_admin_stays() {
+        let (app, _) = app().await;
+        let admin = register(&app, "admin@x.com").await;
+        let other = register(&app, "otro@x.com").await;
+        let (admin_token, admin_id) = (admin["token"].as_str().unwrap(), admin["uid"].as_str().unwrap());
+        let (other_token, other_id) = (other["token"].as_str().unwrap(), other["uid"].as_str().unwrap());
+
+        // Un consultor no lista ni cambia roles.
+        assert_eq!(call(&app, "GET", "/api/users", Some(other_token), Value::Null).await.0, StatusCode::FORBIDDEN);
+        let uri = format!("/api/users/{other_id}/role");
+        assert_eq!(call(&app, "PUT", &uri, Some(other_token), json!({ "role": "administrador" })).await.0, StatusCode::FORBIDDEN);
+
+        // El administrador lista y asciende; el rol nuevo vale con el mismo token.
+        let (status, body) = call(&app, "GET", "/api/users", Some(admin_token), Value::Null).await;
+        assert_eq!((status, body["users"].as_array().unwrap().len()), (StatusCode::OK, 2));
+        assert_eq!(call(&app, "PUT", &uri, Some(admin_token), json!({ "role": "planificador" })).await.0, StatusCode::OK);
+        assert_ne!(call(&app, "POST", "/api/events", Some(other_token), event()).await.0, StatusCode::FORBIDDEN);
+
+        // Valida el rol y el usuario.
+        assert_eq!(call(&app, "PUT", &uri, Some(admin_token), json!({ "role": "root" })).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(call(&app, "PUT", "/api/users/nadie/role", Some(admin_token), json!({ "role": "consultor" })).await.0, StatusCode::NOT_FOUND);
+
+        // El último administrador no puede degradarse; con otro administrador sí.
+        let own = format!("/api/users/{admin_id}/role");
+        assert_eq!(call(&app, "PUT", &own, Some(admin_token), json!({ "role": "consultor" })).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(call(&app, "PUT", &uri, Some(admin_token), json!({ "role": "administrador" })).await.0, StatusCode::OK);
+        assert_eq!(call(&app, "PUT", &own, Some(admin_token), json!({ "role": "consultor" })).await.0, StatusCode::OK);
     }
 }

@@ -7,6 +7,7 @@ mod scada;
 mod scheduler_link;
 mod scheduler_ws;
 mod state;
+mod users;
 
 use std::str::FromStr;
 

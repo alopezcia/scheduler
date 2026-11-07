@@ -196,8 +196,15 @@ Cada rol incluye los del anterior. El rol se guarda en `users.role` y se lee de 
 cada petición (no va en el JWT), así que un cambio surte efecto de inmediato; sin permiso el
 backend responde `403`. El primer usuario que se registra es administrador; los siguientes entran
 como consultor y los usuarios previos a la migración 0007 pasan a administrador. De momento
-no hay endpoint para cambiar roles: se hace en la base de datos
-(`UPDATE users SET role = 'planificador' WHERE email = '...'`).
+los cambia un administrador con estos endpoints (solo administradores):
+
+| Método | Ruta | Cuerpo | Respuesta |
+|---|---|---|---|
+| GET | `/api/users` | — | `{ ok, users: [{ id, name, email, role }] }` |
+| PUT | `/api/users/{id}/role` | `{ role }` | `{ ok, id, role }` |
+
+`400` si el rol no es válido o si el cambio dejaría el sistema sin administradores; `404` si el
+usuario no existe.
 
 ## Control del scheduler (WebSocket)
 
