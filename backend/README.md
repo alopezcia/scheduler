@@ -195,8 +195,8 @@ expuesto en la API.
 Cada rol incluye los del anterior. El rol se guarda en `users.role` y se lee de la base de datos en
 cada petición (no va en el JWT), así que un cambio surte efecto de inmediato; sin permiso el
 backend responde `403`. El primer usuario que se registra es administrador; los siguientes entran
-como consultor y los usuarios previos a la migración 0007 pasan a administrador. De momento
-los cambia un administrador con estos endpoints (solo administradores):
+como consultor y los usuarios previos a la migración 0007 pasan a administrador. Un administrador
+crea usuarios y cambia roles con estos endpoints (solo administradores):
 
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
@@ -229,8 +229,9 @@ clientes lo ven (`link: false`) y las órdenes se rechazan.
    "execution_id"? }` (`execution_id` solo en `cancel`). Cualquier otra orden se rechaza. Respuesta:
    `{ "type": "reply", "id", "ok", "error" }`.
 
-No hay roles en el sistema: cualquier usuario autenticado puede pausar o cancelar. Cada orden queda
-en el log con el nombre del usuario.
+Pausar, reanudar y cancelar exigen el rol `administrador` (se comprueba en cada orden, leyendo el rol
+de la base de datos); `get_status` lo puede pedir cualquier usuario autenticado y, sin permiso, la
+respuesta es `{ ok: false, error }`. Cada orden queda en el log con el nombre del usuario.
 
 ## Base de datos
 
