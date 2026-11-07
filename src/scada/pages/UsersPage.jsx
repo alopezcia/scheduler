@@ -10,12 +10,17 @@ export const ROLES = [
     { value: 'administrador', label: 'Administrador', help: 'Además controla el scheduler y gestiona usuarios' },
 ];
 
+const EMPTY_USER = { name: '', email: '', password: '', role: 'consultor' };
+
 export const UsersPage = () => {
 
     const { user, checkAuthToken } = useAuthStore();
     const [ users, setUsers ] = useState([]);
     const [ isLoading, setIsLoading ] = useState(true);
     const [ savingId, setSavingId ] = useState(null);
+    const [ isCreating, setIsCreating ] = useState(false);
+    const [ isSavingNew, setIsSavingNew ] = useState(false);
+    const [ newUser, setNewUser ] = useState( EMPTY_USER );
 
     const loadUsers = useCallback( async() => {
         try {
@@ -45,9 +50,68 @@ export const UsersPage = () => {
         }
     }
 
+    const onNewUserChange = ({ target }) => setNewUser( current => ({ ...current, [ target.name ]: target.value }) );
+
+    const onCreate = async( event ) => {
+        event.preventDefault();
+        setIsSavingNew( true );
+        try {
+            await calendarApi.post('/users', newUser );
+            setNewUser( EMPTY_USER );
+            setIsCreating( false );
+            await loadUsers();
+        } catch ( error ) {
+            Swal.fire('No se pudo crear el usuario', error.response?.data?.msg || error.message, 'error');
+        } finally {
+            setIsSavingNew( false );
+        }
+    }
+
     return (
         <div className="scada-maintenance">
-            <h3>Usuarios</h3>
+            <div className="d-flex justify-content-between align-items-center">
+                <h3>Usuarios</h3>
+                { !isCreating && (
+                    <button type="button" className="btn btn-primary" onClick={ () => setIsCreating( true ) }>
+                        <i className="fas fa-plus"></i>
+                        <span> Nuevo</span>
+                    </button>
+                )}
+            </div>
+
+            { isCreating && (
+                <form className="card card-body mb-3" onSubmit={ onCreate } aria-label="Nuevo usuario">
+                    <div className="row g-2">
+                        <div className="col-md-3">
+                            <input name="name" className="form-control" placeholder="Nombre" required
+                                value={ newUser.name } onChange={ onNewUserChange } />
+                        </div>
+                        <div className="col-md-3">
+                            <input name="email" type="email" className="form-control" placeholder="Correo" required
+                                value={ newUser.email } onChange={ onNewUserChange } />
+                        </div>
+                        <div className="col-md-2">
+                            <input name="password" type="password" className="form-control" placeholder="Contraseña (mín. 6)"
+                                required minLength={ 6 } autoComplete="new-password"
+                                value={ newUser.password } onChange={ onNewUserChange } />
+                        </div>
+                        <div className="col-md-2">
+                            <select name="role" aria-label="Rol del nuevo usuario" className="form-select"
+                                value={ newUser.role } onChange={ onNewUserChange }>
+                                { ROLES.map( role => <option key={ role.value } value={ role.value }>{ role.label }</option> ) }
+                            </select>
+                        </div>
+                        <div className="col-md-2 d-flex gap-2">
+                            <button type="submit" className="btn btn-primary" disabled={ isSavingNew }>Crear</button>
+                            <button type="button" className="btn btn-outline-secondary" disabled={ isSavingNew }
+                                onClick={ () => { setIsCreating( false ); setNewUser( EMPTY_USER ); } }>
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            )}
+
             <p className="text-muted">
                 { ROLES.map( role => `${ role.label }: ${ role.help }` ).join(' · ') }
             </p>

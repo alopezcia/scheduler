@@ -201,9 +201,10 @@ los cambia un administrador con estos endpoints (solo administradores):
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
 | GET | `/api/users` | — | `{ ok, users: [{ id, name, email, role }] }` |
+| POST | `/api/users` | `{ name, email, password, role }` | `{ ok, user: { id, name, email, role } }` |
 | PUT | `/api/users/{id}/role` | `{ role }` | `{ ok, id, role }` |
 
-`400` si el rol no es válido o si el cambio dejaría el sistema sin administradores; `404` si el
+`400` si el rol no es válido, el correo ya existe, faltan datos o la contraseña es corta (mínimo 6), o si el cambio dejaría el sistema sin administradores; `404` si el
 usuario no existe.
 
 ## Control del scheduler (WebSocket)

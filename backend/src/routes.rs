@@ -30,7 +30,7 @@ fn cors_layer(allowed_origin: &str) -> CorsLayer {
 pub fn build_router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/scheduler/ws", get(scheduler_ws::upgrade))
-        .route("/users", get(users::list_users))
+        .route("/users", get(users::list_users).post(users::create_user))
         .route("/users/{id}/role", put(users::update_role))
         .route("/auth", post(auth::handlers::login))
         .route("/auth/new", post(auth::handlers::register))
@@ -203,5 +203,34 @@ mod tests {
         assert_eq!(call(&app, "PUT", &own, Some(admin_token), json!({ "role": "consultor" })).await.0, StatusCode::BAD_REQUEST);
         assert_eq!(call(&app, "PUT", &uri, Some(admin_token), json!({ "role": "administrador" })).await.0, StatusCode::OK);
         assert_eq!(call(&app, "PUT", &own, Some(admin_token), json!({ "role": "consultor" })).await.0, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn admins_create_users_with_a_role_and_they_can_log_in() {
+        let (app, _) = app().await;
+        let admin = register(&app, "admin@x.com").await;
+        let consultant = register(&app, "c@x.com").await;
+        let token = admin["token"].as_str().unwrap();
+        let body = json!({ "name": " Pía ", "email": "Pia@X.com", "password": "secreto1", "role": "planificador" });
+
+        // Un no administrador no puede crear usuarios.
+        let forbidden = call(&app, "POST", "/api/users", consultant["token"].as_str(), body.clone()).await;
+        assert_eq!(forbidden.0, StatusCode::FORBIDDEN);
+
+        let (status, created) = call(&app, "POST", "/api/users", Some(token), body.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!((created["user"]["name"].as_str(), created["user"]["email"].as_str(), created["user"]["role"].as_str()),
+                   (Some("Pía"), Some("pia@x.com"), Some("planificador")));
+
+        // Entra con la contraseña indicada y con el rol asignado.
+        let (status, login) = call(&app, "POST", "/api/auth", None, json!({ "email": "pia@x.com", "password": "secreto1" })).await;
+        assert_eq!((status, login["role"].as_str()), (StatusCode::OK, Some("planificador")));
+
+        // Correo repetido, rol inválido y contraseña corta se rechazan.
+        assert_eq!(call(&app, "POST", "/api/users", Some(token), body).await.0, StatusCode::BAD_REQUEST);
+        let bad_role = json!({ "name": "X", "email": "x@x.com", "password": "secreto1", "role": "root" });
+        assert_eq!(call(&app, "POST", "/api/users", Some(token), bad_role).await.0, StatusCode::BAD_REQUEST);
+        let short = json!({ "name": "X", "email": "x@x.com", "password": "123", "role": "consultor" });
+        assert_eq!(call(&app, "POST", "/api/users", Some(token), short).await.0, StatusCode::BAD_REQUEST);
     }
 }

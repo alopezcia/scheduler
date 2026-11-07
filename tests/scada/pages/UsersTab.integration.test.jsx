@@ -11,7 +11,7 @@ import { authSlice } from '../../../src/store';
 // con un backend simulado que aplica las mismas reglas que el verdadero (el último
 // administrador no se puede degradar y el rol de cada usuario se lee de "la base de datos").
 
-jest.mock('../../../src/api', () => ({ calendarApi: { get: jest.fn(), put: jest.fn() } }));
+jest.mock('../../../src/api', () => ({ calendarApi: { get: jest.fn(), put: jest.fn(), post: jest.fn() } }));
 jest.mock('sweetalert2', () => ({ fire: jest.fn() }));
 jest.mock('../../../src/calendar', () => ({ Navbar: () => null }));
 jest.mock('../../../src/scada/pages/SitesMaintenancePage', () => ({ SitesMaintenancePage: () => <p>Sites page</p> }));
@@ -43,6 +43,14 @@ const fakeBackend = ( currentUid ) => {
     });
 }
 
+const fakeCreate = () => {
+    calendarApi.post.mockImplementation( async( url, user ) => {
+        if ( db.some( u => u.email === user.email ) ) throw { response: { data: { msg: 'El usuario ya existe' } } };
+        db.push({ id: `u${ db.length + 1 }`, name: user.name, email: user.email, role: user.role });
+        return { data: { ok: true } };
+    });
+}
+
 const renderAs = ( uid ) => {
     const me = db.find( u => u.id === uid );
     const store = configureStore({
@@ -50,6 +58,7 @@ const renderAs = ( uid ) => {
         preloadedState: { auth: { status: 'authenticated', user: { uid: me.id, name: me.name, role: me.role }, errorMessage: undefined } },
     });
     fakeBackend( uid );
+    fakeCreate();
     return render( <Provider store={ store }><ScadaPage /></Provider> );
 }
 
@@ -122,5 +131,27 @@ describe('Pestaña Usuarios (integración)', () => {
         await waitFor(() => expect( screen.queryByRole('button', { name: 'Usuarios' }) ).toBeNull() );
         expect( calendarApi.get ).toHaveBeenCalledWith('auth/renew');
         expect( screen.getByText('Sites page') ).toBeTruthy();
+    });
+
+    test('crear un usuario lo añade a la lista con el rol elegido; un correo repetido se rechaza', async() => {
+        renderAs('u1');
+        await openUsersTab();
+
+        const fill = () => {
+            fireEvent.click( screen.getByRole('button', { name: /Nuevo/ }) );
+            fireEvent.change( screen.getByPlaceholderText('Nombre'), { target: { name: 'name', value: 'Pía' } } );
+            fireEvent.change( screen.getByPlaceholderText('Correo'), { target: { name: 'email', value: 'pia@x.com' } } );
+            fireEvent.change( screen.getByPlaceholderText(/Contraseña/), { target: { name: 'password', value: 'secreto1' } } );
+            fireEvent.change( screen.getByLabelText('Rol del nuevo usuario'), { target: { name: 'role', value: 'planificador' } } );
+            fireEvent.submit( screen.getByRole('form', { name: 'Nuevo usuario' }) );
+        };
+
+        fill();
+        expect( await screen.findByText('pia@x.com') ).toBeTruthy();
+        expect( screen.getByLabelText('Rol de Pía').value ).toBe('planificador');
+
+        fill();
+        await waitFor(() => expect( Swal.fire ).toHaveBeenCalledWith('No se pudo crear el usuario', 'El usuario ya existe', 'error') );
+        expect( db.filter( u => u.email === 'pia@x.com' ) ).toHaveLength( 1 );
     });
 });

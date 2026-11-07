@@ -9,7 +9,7 @@ use crate::auth::models::{AuthResponse, LoginPayload, RegisterPayload, UserRow};
 use crate::error::AppError;
 use crate::state::AppState;
 
-const MIN_PASSWORD_LEN: usize = 6;
+pub const MIN_PASSWORD_LEN: usize = 6;
 
 pub async fn login(
     State(state): State<AppState>,
